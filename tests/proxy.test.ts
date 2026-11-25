@@ -10,6 +10,8 @@ describe("protection par mot de passe", () => {
   afterEach(() => {
     delete process.env.APP_PASSWORD;
     delete process.env.APP_USER;
+    delete process.env.ADMIN_PASSWORD;
+    delete process.env.ADMIN_USER;
   });
 
   it("laisse tout passer sans APP_PASSWORD (développement local)", () => {
@@ -38,5 +40,24 @@ describe("protection par mot de passe", () => {
     expect(proxy(req("/api/unsubscribe?c=1&t=2")).status).toBe(200);
     expect(proxy(req("/api/cron/tick")).status).toBe(200);
     expect(proxy(req("/api/healthz")).status).toBe(401);
+  });
+
+  it("distingue l'administrateur des utilisateurs, sans que le navigateur puisse imposer son rôle", () => {
+    process.env.APP_PASSWORD = "equipe";
+    process.env.ADMIN_PASSWORD = "proprio";
+    const role = (r: Response) => r.headers.get("x-middleware-request-x-prospecta-role");
+    expect(role(proxy(req("/", basic("x", "proprio"))))).toBe("admin");
+    expect(role(proxy(req("/", basic("x", "equipe"))))).toBe("user");
+    expect(proxy(req("/", basic("x", "faux"))).status).toBe(401);
+    const spoof = new NextRequest("https://app.example/", { headers: { authorization: basic("x", "equipe"), "x-prospecta-role": "admin" } });
+    expect(role(proxy(spoof))).toBe("user");
+    expect(role(proxy(new NextRequest("https://app.example/api/health", { headers: { "x-prospecta-role": "admin" } })))).toBe("user");
+  });
+
+  it("sans ADMIN_PASSWORD, le mot de passe de l'application donne l'accès administrateur", () => {
+    process.env.APP_PASSWORD = "s3cret";
+    expect(proxy(req("/", basic("x", "s3cret"))).headers.get("x-middleware-request-x-prospecta-role")).toBe("admin");
+    delete process.env.APP_PASSWORD;
+    expect(proxy(req("/")).headers.get("x-middleware-request-x-prospecta-role")).toBe("admin");
   });
 });

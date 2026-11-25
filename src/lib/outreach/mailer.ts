@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import nodemailer, { type Transporter } from "nodemailer";
 import { config } from "@/lib/config";
 import type { SendingMailbox } from "./mailboxes";
+import { getSenderAddress } from "./sender";
 
 export function unsubscribeToken(contactId: string): string {
   return createHmac("sha256", config.unsubscribeSecret).update(contactId).digest("base64url").slice(0, 24);
@@ -51,8 +52,9 @@ export type OutgoingEmail = {
 
 /** Envoie un email texte + HTML minimal, avec pied de page légal et désinscription en un clic. */
 export async function sendEmail(mail: OutgoingEmail, mailbox: SendingMailbox): Promise<{ messageId: string }> {
+  const senderAddress = await getSenderAddress();
   const footerLines = [
-    config.smtp.senderAddress,
+    senderAddress,
     mail.contactId ? `Pour ne plus recevoir de messages : ${unsubscribeUrl(mail.contactId)}` : "",
   ].filter(Boolean);
   const text = `${mail.body.trim()}\n\n--\n${footerLines.join("\n")}`;
@@ -61,7 +63,7 @@ export async function sendEmail(mail: OutgoingEmail, mailbox: SendingMailbox): P
     .split(/\n{2,}/)
     .map((p) => `<p style="margin:0 0 12px">${linkify(escapeHtml(p)).replace(/\n/g, "<br>")}</p>`)
     .join("")}<p style="margin-top:24px;font-size:11px;color:#888">${[
-    config.smtp.senderAddress && escapeHtml(config.smtp.senderAddress),
+    senderAddress && escapeHtml(senderAddress),
     mail.contactId ? `<a href="${unsubscribeUrl(mail.contactId)}" style="color:#888">Se désinscrire</a>` : "",
   ]
     .filter(Boolean)

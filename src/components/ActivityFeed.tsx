@@ -2,8 +2,9 @@
 
 import clsx from "clsx";
 import { Activity } from "lucide-react";
+import { useIsAdmin } from "./RoleContext";
 
-export type FeedEvent = { id: number; level: string; kind: string; message: string; createdAt: string };
+export type FeedEvent = { id: number; level: string; kind: string; message: string; createdAt: string; data?: Record<string, unknown> | null };
 
 const DOT: Record<string, string> = {
   info: "bg-slate-300",
@@ -19,6 +20,7 @@ function time(d: string) {
 /** Fil d'activité en direct : ce que l'agent fait, étape par étape. */
 export function ActivityFeed({ events, live }: { events: FeedEvent[]; live: boolean }) {
   const list = [...events].reverse();
+  const admin = useIsAdmin();
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -38,6 +40,13 @@ export function ActivityFeed({ events, live }: { events: FeedEvent[]; live: bool
             <span className={clsx("mt-1.5 size-2 shrink-0 rounded-full", DOT[e.level] ?? DOT.info)} />
             <div className="min-w-0">
               <p className={clsx("text-sm leading-snug", e.level === "error" ? "text-red-700" : "text-slate-700")}>{e.message}</p>
+              {admin && e.data?.tech ? (
+                <p className="mt-0.5 break-words font-mono text-[11px] text-slate-400" title="Détail technique (administrateur)">
+                  {Object.entries(e.data.tech as Record<string, unknown>)
+                    .map(([k, v]) => `${k}: ${String(v)}`)
+                    .join(" · ")}
+                </p>
+              ) : null}
               <p className="mt-0.5 text-[11px] text-slate-400">{time(e.createdAt)}</p>
             </div>
           </li>

@@ -51,13 +51,30 @@ Toutes les options sont décrites dans [`.env.example`](.env.example). Les princ
 | `ENCRYPTION_KEY` | Chiffre les mots de passe des boîtes d'envoi stockés en base (par défaut `UNSUBSCRIBE_SECRET`). |
 | `SMTP_VERIFY` | Vérification des boîtes par dialogue SMTP (`RCPT TO`). Nécessite le port 25 sortant, souvent bloqué chez les hébergeurs cloud. |
 | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SENDER_EMAIL`, `SENDER_NAME` | Envoi des emails. |
-| `SENDER_ADDRESS` | Adresse postale affichée en pied d'email. |
+| `SENDER_ADDRESS` | Adresse postale affichée en pied d'email, si elle n'est pas renseignée dans Paramètres. |
+| `APP_PASSWORD` / `ADMIN_PASSWORD` | Accès des utilisateurs et accès du propriétaire (voir « Utilisateurs et administration »). |
 | `DAILY_SEND_LIMIT` | Plafond d'envois par jour (40 par défaut). |
 | `APP_URL` | URL publique, utilisée pour les liens de désinscription. |
 
 Les appels à Claude activent le **repli côté serveur** (`fallbacks: "default"`) : si le modèle principal décline une requête, l'API la relance automatiquement sur un modèle de repli.
 
 **Anthropic ou OpenRouter ?** Avec Anthropic, Claude enchaîne lui-même plusieurs recherches web et affine ses requêtes : c'est le mode le plus précis. Avec OpenRouter, chaque étape fait une recherche web (plugin `web`) dont les résultats sont fournis au modèle choisi : plus simple, un peu moins exhaustif. Les deux produisent des sorties JSON validées.
+
+## Utilisateurs et administration
+
+L'application est faite pour être utilisée par d'autres personnes, à qui elle ne montre aucun détail technique.
+
+- **Utilisateurs** (`APP_PASSWORD`) : campagnes, leads, boîtes d'envoi, adresse de l'expéditeur, liste d'exclusion. Ils ne voient pas :
+  - les fournisseurs (IA, bases de données, moteurs de recherche, vérification) ;
+  - les coûts ;
+  - les variables de configuration ;
+  - les erreurs techniques, remplacées par un message générique.
+- **Administrateur** (`ADMIN_PASSWORD`, en option `ADMIN_USER`) : tout ce que voient les utilisateurs, plus :
+  - la page **Administration** : fournisseurs, test des clés, infrastructure ;
+  - les coûts IA ;
+  - le détail technique des étapes en échec dans le fil d'activité.
+
+Sans `ADMIN_PASSWORD`, `APP_PASSWORD` donne l'accès administrateur. Le rôle est fixé côté serveur, dans `src/proxy.ts`, à partir du mot de passe saisi : le navigateur ne peut pas l'imposer. La sonde publique `/api/health` ne renvoie que `{"ok": true}`.
 
 ## Boîtes d'envoi et réponses
 

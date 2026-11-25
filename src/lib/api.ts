@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { errorMessage } from "@/lib/util";
+import { isAdmin } from "@/lib/access";
 
 export function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status });
@@ -14,7 +15,8 @@ export async function handle(fn: () => Promise<Response>): Promise<Response> {
     if (e instanceof ZodError) return json({ error: "Données invalides", details: e.issues }, 400);
     if (e instanceof Error && e.name === "PlanError") return json({ error: e.message }, 400);
     console.error("[api]", e);
-    return json({ error: errorMessage(e) }, 500);
+    // Le détail (fournisseur, base de données…) n'est montré qu'à l'administrateur.
+    return json({ error: (await isAdmin()) ? errorMessage(e) : "Une erreur est survenue. Réessayez dans un instant." }, 500);
   }
 }
 

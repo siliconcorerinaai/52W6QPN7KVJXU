@@ -33,6 +33,18 @@ async function dbStep<T>(p: Promise<T>, label: string): Promise<T> {
   }
 }
 
+/** Nom d'une étape tel qu'affiché aux utilisateurs (sans détail technique). */
+const STEP_LABEL: Record<string, string> = {
+  "campaign.discover": "la recherche d'entreprises",
+  "company.research": "l'analyse d'une entreprise",
+  "company.contacts": "la recherche de décideurs",
+  "contact.email": "la recherche d'un email",
+  "contact.write": "la rédaction d'une séquence",
+  "message.send": "l'envoi d'un email",
+  "campaign.supervise": "le suivi de la campagne",
+  "mailbox.sync": "la lecture des boîtes de réception",
+};
+
 /** Exécute un job et enregistre son issue. Ne lève jamais d'exception. */
 async function processOne(job: Job) {
   const started = Date.now();
@@ -52,7 +64,10 @@ async function processOne(job: Job) {
     const msg = errorMessage(error);
     const final = await dbStep(failJob(job, msg), "l'enregistrement de l'échec");
     console.error(`[worker] ✗ job ${job.id} (${job.type}) a échoué${final ? " définitivement" : ""} : ${msg}`);
-    if (final) await logEvent(job.campaignId, "error", job.type, `Échec définitif : ${msg}`, { jobId: job.id });
+    if (final) {
+      const step = STEP_LABEL[job.type] ?? "une étape";
+      await logEvent(job.campaignId, "error", job.type, `⚠️ Échec de ${step} après plusieurs tentatives.`, { tech: { jobId: job.id, error: msg } });
+    }
   } catch (e) {
     // Base injoignable : le job reste « en cours » et sera remis en file par recoverStaleJobs.
     console.error(`[worker] job ${job.id} (${job.type}) : issue non enregistrée — ${errorMessage(e)}`);

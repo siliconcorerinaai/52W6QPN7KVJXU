@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { kickWorker } from "@/lib/jobs/kick";
 import { handle, json, type IdParams } from "@/lib/api";
+import { isAdmin, publicEventData, publicStats } from "@/lib/access";
 import {
   campaignEvents,
   campaignStats,
@@ -22,7 +23,8 @@ export async function GET(req: Request, { params }: IdParams) {
     const after = Number(new URL(req.url).searchParams.get("after") ?? 0);
     const [stats, events] = await Promise.all([campaignStats([id]), campaignEvents(id, after)]);
     kickWorker();
-    return json({ campaign, stats: stats[id], events });
+    if (await isAdmin()) return json({ campaign, stats: stats[id], events });
+    return json({ campaign, stats: publicStats(stats[id]), events: events.map((e) => ({ ...e, data: publicEventData(e.data) })) });
   });
 }
 

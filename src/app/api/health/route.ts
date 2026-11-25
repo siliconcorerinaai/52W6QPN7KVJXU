@@ -1,17 +1,16 @@
 import { sql } from "drizzle-orm";
-import { config } from "@/lib/config";
-import { dbDriver, getDb } from "@/lib/db";
+import { getDb } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-/** Sonde de santé (healthcheck Railway) : base joignable et migrations appliquées. */
+/** Sonde de santé publique : ne dit rien de l'infrastructure, seulement si l'application répond. */
 export async function GET() {
   try {
     const db = await getDb();
     await db.execute(sql`select 1`);
-    return Response.json({ ok: true, database: dbDriver(), ai: config.demoMode ? "demo" : config.ai.provider });
+    return Response.json({ ok: true });
   } catch (e) {
     console.error("[health]", e);
-    return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 503 });
+    return Response.json({ ok: false }, { status: 503 });
   }
 }

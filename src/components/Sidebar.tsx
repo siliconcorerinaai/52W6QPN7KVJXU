@@ -3,16 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
-import { LayoutDashboard, Plus, Settings, Target, Radar } from "lucide-react";
+import { LayoutDashboard, Plus, Settings, ShieldCheck, Target, Radar } from "lucide-react";
 
 const NAV = [
   { href: "/", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/campaigns", label: "Campagnes", icon: Target },
   { href: "/settings", label: "Paramètres", icon: Settings },
 ];
+const ADMIN_NAV = { href: "/admin", label: "Administration", icon: ShieldCheck };
 
-export function Sidebar({ demo }: { demo: boolean }) {
+export function Sidebar({ demo, admin }: { demo: boolean; admin: boolean }) {
   const path = usePathname();
+  const nav = admin ? [...NAV, ADMIN_NAV] : NAV;
   return (
     <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -32,7 +34,7 @@ export function Sidebar({ demo }: { demo: boolean }) {
           <Plus className="size-4" /> Nouvelle recherche
         </Link>
         <nav className="space-y-0.5">
-          {NAV.map(({ href, label, icon: Icon }) => {
+          {nav.map(({ href, label, icon: Icon }) => {
             const active = href === "/" ? path === "/" : path.startsWith(href) && !path.startsWith("/campaigns/new");
             return (
               <Link
@@ -53,13 +55,13 @@ export function Sidebar({ demo }: { demo: boolean }) {
       <div className="mt-auto p-4">
         {demo ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-            <div className="font-semibold">Mode démo</div>
-            Données simulées. Ajoutez <code className="font-mono">ANTHROPIC_API_KEY</code> ou <code className="font-mono">OPENROUTER_API_KEY</code> pour prospecter pour de vrai.
+            <div className="font-semibold">Mode démonstration</div>
+            {admin ? "Données simulées : configurez l'agent dans l'administration pour prospecter pour de vrai." : "Les résultats affichés sont des exemples simulés."}
           </div>
         ) : (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
-            <div className="font-semibold">IA connectée</div>
-            Recherche web en direct activée.
+            <div className="font-semibold">Agent actif</div>
+            Recherche en direct activée.
           </div>
         )}
       </div>
@@ -67,7 +69,7 @@ export function Sidebar({ demo }: { demo: boolean }) {
   );
 }
 
-export function MobileNav() {
+export function MobileNav({ admin }: { admin: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 md:hidden">
       <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold">
@@ -80,6 +82,11 @@ export function MobileNav() {
         <Link href="/settings" className="rounded-md p-2 text-slate-600 hover:bg-slate-100" aria-label="Paramètres">
           <Settings className="size-4" />
         </Link>
+        {admin && (
+          <Link href="/admin" className="rounded-md p-2 text-slate-600 hover:bg-slate-100" aria-label="Administration">
+            <ShieldCheck className="size-4" />
+          </Link>
+        )}
         <Link href="/campaigns/new" className="ml-1 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-brand-600 px-2.5 py-1.5 text-white">
           <Plus className="size-4" /> Nouveau
         </Link>

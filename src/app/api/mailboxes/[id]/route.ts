@@ -14,7 +14,7 @@ const Patch = z.object({
 export async function PATCH(req: Request, { params }: IdParams) {
   return handle(async () => {
     const { id } = await params;
-    if (id === "env") return json({ error: "La boîte par défaut se règle par variables d'environnement" }, 400);
+    if (id === "env") return json({ error: "La boîte par défaut est gérée par l'administrateur." }, 400);
     const body = Patch.parse(await req.json());
     const db = await getDb();
     await db.update(mailboxes).set({ ...body, updatedAt: new Date() }).where(eq(mailboxes.id, id));
@@ -25,7 +25,7 @@ export async function PATCH(req: Request, { params }: IdParams) {
 export async function DELETE(_req: Request, { params }: IdParams) {
   return handle(async () => {
     const { id } = await params;
-    if (id === "env") return json({ error: "La boîte par défaut se retire en supprimant ses variables d'environnement" }, 400);
+    if (id === "env") return json({ error: "La boîte par défaut est gérée par l'administrateur." }, 400);
     const db = await getDb();
     await db.delete(mailboxes).where(eq(mailboxes.id, id));
     return json({ ok: true });
