@@ -79,7 +79,7 @@ function ago(d: string | null) {
 }
 
 /** Gestion des boîtes d'envoi : rotation, limites, test, lecture des réponses. */
-export function MailboxesCard({ senderAddress, demo }: { senderAddress: string; demo: boolean }) {
+export function MailboxesCard({ demo }: { demo: boolean }) {
   const [boxes, setBoxes] = useState<Box[]>([]);
   const [adding, setAdding] = useState(false);
   const [preset, setPreset] = useState("google");
@@ -158,7 +158,7 @@ export function MailboxesCard({ senderAddress, demo }: { senderAddress: string; 
                   <div className="flex items-center gap-2 font-medium text-slate-900">
                     {b.enabled ? <CheckCircle2 className="size-4 text-emerald-500" /> : <span className="size-4 rounded-full border border-slate-300" />}
                     {b.fromName ? `${b.fromName} <${b.fromEmail}>` : b.fromEmail}
-                    {b.source === "env" && <Badge>variables d&apos;env.</Badge>}
+                    {b.source === "env" && <Badge>par défaut</Badge>}
                   </div>
                   <div className="mt-0.5 text-xs text-slate-500">
                     {b.smtpHost}:{b.smtpPort} · {b.sentToday}/{b.dailyLimit} envoyés aujourd&apos;hui ·{" "}
@@ -350,10 +350,6 @@ export function MailboxesCard({ senderAddress, demo }: { senderAddress: string; 
             Tester
           </Button>
         </div>
-        <p className="text-xs text-slate-500">
-          Adresse postale en pied d&apos;email :{" "}
-          {senderAddress || <span className="text-amber-700">à renseigner (variable SENDER_ADDRESS, obligatoire en prospection)</span>}
-        </p>
       </div>
     </Card>
   );

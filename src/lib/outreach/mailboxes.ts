@@ -32,7 +32,7 @@ function envMailbox(): SendingMailbox | null {
   return {
     id: ENV_MAILBOX_ID,
     source: "env",
-    label: "Boîte par défaut (variables d'environnement)",
+    label: "Boîte par défaut",
     fromName: config.smtp.senderName,
     fromEmail: config.smtp.senderEmail,
     smtp: { host: config.smtp.host, port: config.smtp.port, secure: config.smtp.secure, user: config.smtp.user, pass: config.smtp.pass },

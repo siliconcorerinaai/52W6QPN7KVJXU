@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { kickWorker } from "@/lib/jobs/kick";
 import { handle, json } from "@/lib/api";
+import { isAdmin, publicStats } from "@/lib/access";
 import { createCampaign, listCampaigns } from "@/lib/pipeline/campaigns";
 import { CampaignOfferSchema, CampaignPlanSchema, CampaignSettingsSchema } from "@/lib/types";
 
@@ -8,7 +9,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function GET() {
-  return handle(async () => json({ campaigns: await listCampaigns() }));
+  return handle(async () => {
+    const list = await listCampaigns();
+    return json({ campaigns: (await isAdmin()) ? list : list.map((c) => ({ ...c, stats: publicStats(c.stats) })) });
+  });
 }
 
 const Body = z.object({

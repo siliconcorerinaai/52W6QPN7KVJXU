@@ -125,9 +125,10 @@ async function discover(job: Job) {
     inserted ? "success" : "warn",
     "discover",
     inserted
-      ? `🏢 ${inserted} nouvelles entreprises trouvées (${res.via}) : ${fresh.slice(0, 5).map((x) => x.name).join(", ")}${fresh.length > 5 ? "…" : ""}`
+      ? `🏢 ${inserted} nouvelles entreprises trouvées : ${fresh.slice(0, 5).map((x) => x.name).join(", ")}${fresh.length > 5 ? "…" : ""}`
       : "Aucune nouvelle entreprise trouvée sur ce tour.",
-    { sources: res.sources.slice(0, 20) },
+    // `tech` : détails internes, visibles seulement par l'administrateur.
+    { sources: res.sources.slice(0, 20), tech: { via: res.via } },
   );
 }
 

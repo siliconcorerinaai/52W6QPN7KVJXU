@@ -24,6 +24,7 @@ import { ActivityFeed, type FeedEvent } from "@/components/ActivityFeed";
 import { CampaignStatusBadge, ContactStatusBadge, EmailBadge, ScoreBadge, signalIcon } from "@/components/badges";
 import { CompaniesTable } from "@/components/CompaniesTable";
 import { LeadDrawer } from "@/components/LeadDrawer";
+import { useIsAdmin } from "@/components/RoleContext";
 import { Badge, Button, Card, EmptyState, Input, Linkedin } from "@/components/ui";
 import type { Campaign, Company, Contact } from "@/lib/db/schema";
 import type { CampaignStats } from "@/lib/pipeline/campaigns";
@@ -61,6 +62,7 @@ function FunnelStep({ label, value, total, icon, highlight }: { label: string; v
 export default function CampaignPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const admin = useIsAdmin();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [stats, setStats] = useState<CampaignStats | null>(null);
   const [events, setEvents] = useState<FeedEvent[]>([]);
@@ -270,9 +272,11 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                 {label}
               </button>
             ))}
-            <span className="ml-auto hidden pr-2 text-xs text-slate-400 sm:inline" title="Coût estimé des appels IA et recherches web">
-              Coût IA : {stats.costUsd.toFixed(2)} $ · {stats.webSearches} recherches
-            </span>
+            {admin && stats.costUsd !== undefined && (
+              <span className="ml-auto hidden pr-2 text-xs text-slate-400 sm:inline" title="Coût estimé des appels IA et recherches web (visible par l'administrateur seulement)">
+                Coût IA : {stats.costUsd.toFixed(2)} $ · {stats.webSearches} recherches
+              </span>
+            )}
           </div>
 
           {tab === "leads" && (

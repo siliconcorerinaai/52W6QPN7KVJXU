@@ -1,42 +1,63 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Ban, CheckCircle2, Circle, Database, Plug, Trash2, XCircle } from "lucide-react";
-import { Badge, Button, Card, CardHeader, Textarea } from "@/components/ui";
+import { Ban, MapPin, Trash2 } from "lucide-react";
+import { Badge, Button, Card, CardHeader, Input, Textarea } from "@/components/ui";
 import { MailboxesCard } from "@/components/MailboxesCard";
-
-type KeyCheck = { id: string; ok: boolean; detail: string };
 
 type Settings = {
   demoMode: boolean;
-  database: string;
-  providers: { id: string; label: string; enabled: boolean; detail: string }[];
-  smtp: { configured: boolean; host: string; senderEmail: string; senderName: string; senderAddress: string; dailyLimit: number };
-  worker: { embedded: boolean; concurrency: number };
+  senderAddress: string;
   suppressions: { value: string; reason: string; createdAt: string }[];
 };
+
+/** Adresse postale ajoutée en pied de chaque email (obligatoire en prospection). */
+function SenderAddressCard({ initial, onSaved }: { initial: string; onSaved: () => void }) {
+  const [value, setValue] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => setValue(initial), [initial]);
+
+  async function save() {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ senderAddress: value }),
+      });
+      if (res.ok) {
+        setSaved(true);
+        onSaved();
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Adresse de l'expéditeur"
+        subtitle="Adresse postale de votre entreprise, ajoutée en bas de chaque email (obligatoire en prospection)."
+        icon={<MapPin className="size-4" />}
+      />
+      <div className="flex flex-col gap-2 p-5 sm:flex-row">
+        <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Acme SAS, 12 rue de la Paix, 75002 Paris" />
+        <Button variant="secondary" onClick={save} loading={saving} disabled={value.trim() === initial.trim()}>
+          Enregistrer
+        </Button>
+      </div>
+      {!initial && !saved && <p className="px-5 pb-4 text-xs text-amber-700">À renseigner avant le premier envoi.</p>}
+      {saved && <p className="px-5 pb-4 text-xs text-emerald-700">Adresse enregistrée.</p>}
+    </Card>
+  );
+}
 
 export default function SettingsPage() {
   const [s, setS] = useState<Settings | null>(null);
   const [toAdd, setToAdd] = useState("");
-  const [checks, setChecks] = useState<Record<string, KeyCheck> | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [checkError, setCheckError] = useState<string | null>(null);
-
-  async function testKeys() {
-    setChecking(true);
-    setCheckError(null);
-    try {
-      const res = await fetch("/api/settings/check", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setChecks(Object.fromEntries((data.results as KeyCheck[]).map((r) => [r.id, r])));
-    } catch (e) {
-      setCheckError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setChecking(false);
-    }
-  }
 
   const load = useCallback(async () => {
     const res = await fetch("/api/settings");
@@ -60,62 +81,19 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Paramètres</h1>
-        <p className="text-sm text-slate-500">
-          Les clés et identifiants se configurent dans le fichier <code className="rounded bg-slate-100 px-1 font-mono text-xs">.env.local</code> (voir{" "}
-          <code className="rounded bg-slate-100 px-1 font-mono text-xs">.env.example</code>), puis redémarrez le serveur.
-        </p>
+        <p className="text-sm text-slate-500">Vos boîtes d&apos;envoi, votre adresse d&apos;expéditeur et les contacts à ne jamais solliciter.</p>
       </div>
 
       {s.demoMode && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <strong>Mode démo actif.</strong> Les entreprises, personnes et emails sont simulés (domaines en <code>.example</code>) et aucun email n&apos;est
-          réellement envoyé. Renseignez <code className="font-mono">ANTHROPIC_API_KEY</code> ou <code className="font-mono">OPENROUTER_API_KEY</code> pour activer l&apos;agent réel.
+          <strong>Mode démonstration.</strong> Les entreprises, personnes et emails affichés sont des exemples simulés, et aucun email n&apos;est
+          réellement envoyé.
         </div>
       )}
 
-      <Card>
-        <CardHeader
-          title="Sources de données & IA"
-          subtitle="Plus de sources = plus de leads trouvés et mieux vérifiés."
-          icon={<Plug className="size-4" />}
-          action={
-            <Button variant="secondary" size="sm" onClick={testKeys} loading={checking} disabled={!s.providers.some((p) => p.enabled)}>
-              Tester les clés
-            </Button>
-          }
-        />
-        {checkError && <p className="border-b border-slate-100 px-5 py-2 text-sm text-red-600">Test impossible : {checkError}</p>}
-        <ul className="divide-y divide-slate-100">
-          {s.providers.map((p) => {
-            const check = checks?.[p.id];
-            return (
-              <li key={p.id} className="flex items-center justify-between gap-4 px-5 py-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  {check && !check.ok ? (
-                    <XCircle className="size-5 shrink-0 text-red-500" />
-                  ) : p.enabled ? (
-                    <CheckCircle2 className="size-5 shrink-0 text-emerald-500" />
-                  ) : (
-                    <Circle className="size-5 shrink-0 text-slate-300" />
-                  )}
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-slate-900">{p.label}</div>
-                    <div className="text-xs text-slate-500">{p.detail}</div>
-                    {check && <div className={`mt-0.5 text-xs ${check.ok ? "text-emerald-700" : "text-red-600"}`}>{check.detail}</div>}
-                  </div>
-                </div>
-                {check ? (
-                  <Badge tone={check.ok ? "green" : "red"}>{check.ok ? "Clé OK" : "Problème"}</Badge>
-                ) : (
-                  <Badge tone={p.enabled ? "green" : "slate"}>{p.enabled ? "Actif" : "Inactif"}</Badge>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </Card>
+      <MailboxesCard demo={s.demoMode} />
 
-      <MailboxesCard senderAddress={s.smtp.senderAddress} demo={s.demoMode} />
+      <SenderAddressCard initial={s.senderAddress} onSaved={load} />
 
       <Card>
         <CardHeader
@@ -154,22 +132,6 @@ export default function SettingsPage() {
           ) : (
             <p className="text-sm text-slate-400">Aucune exclusion.</p>
           )}
-        </div>
-      </Card>
-
-      <Card>
-        <CardHeader title="Infrastructure" icon={<Database className="size-4" />} />
-        <div className="grid gap-3 p-5 text-sm sm:grid-cols-2">
-          <div>
-            <div className="text-xs text-slate-500">Base de données</div>
-            <div className="font-medium">{s.database === "postgres" ? "PostgreSQL (DATABASE_URL) — schéma prospecta" : "PGlite embarqué (./data/pglite)"}</div>
-          </div>
-          <div>
-            <div className="text-xs text-slate-500">Worker</div>
-            <div className="font-medium">
-              {s.worker.embedded ? "Embarqué dans le serveur" : "Process séparé (npm run worker)"} · {s.worker.concurrency} tâches en parallèle
-            </div>
-          </div>
         </div>
       </Card>
     </div>

@@ -216,7 +216,7 @@ function NewCampaign() {
                   checked={settings.deepResearch}
                   onChange={(v) => setS("deepResearch", v)}
                   label="Recherche approfondie"
-                  hint="Signaux d'achat récents et décideurs via recherche web (plus précis, un peu plus coûteux)."
+                  hint="Signaux d'achat récents et décideurs recherchés en profondeur (plus précis, un peu plus long)."
                 />
                 <Toggle checked={settings.autoWrite} onChange={(v) => setS("autoWrite", v)} label="Rédaction automatique" hint="Une séquence personnalisée est rédigée pour chaque lead trouvé." />
               </div>

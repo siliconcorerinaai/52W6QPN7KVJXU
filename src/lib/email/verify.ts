@@ -146,7 +146,8 @@ export async function verifyEmail(email: string, prior = 50): Promise<Verificati
     const confidence =
       verdict.status === "valid" ? (role ? 88 : 97) : verdict.status === "catch_all" ? Math.min(80, Math.max(prior, 60)) : 0;
     const label = { valid: "Boîte confirmée", invalid: "Adresse refusée", catch_all: "Domaine catch-all" }[verdict.status as "valid" | "invalid" | "catch_all"];
-    return { status: verdict.status, confidence, reason: `${label} par ${verdict.provider} (${verdict.detail})`, mx };
+    // Le nom du service n'apparaît pas : ce texte est montré aux utilisateurs.
+    return { status: verdict.status, confidence, reason: `${label} par un service de vérification`, mx };
   }
 
   if (config.email.smtpVerify && !free) {
