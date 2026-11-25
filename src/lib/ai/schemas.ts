@@ -66,7 +66,7 @@ export const PeopleSchema = z.object({
       title: z.string().describe("Intitulé de poste actuel"),
       seniority: z.enum(["c_level", "vp", "director", "manager", "senior", "other"]),
       linkedinUrl: z.string().nullable(),
-      email: z.string().nullable().describe("Email uniquement s'il est publié explicitement"),
+      email: z.string().nullable().describe("Email uniquement s'il est publié explicitement ou fourni par la base de données B2B"),
       sourceUrl: z.string().nullable(),
       relevance: z.number().int().min(0).max(100).describe("Pertinence vis-à-vis des personas ciblés"),
       reason: z.string().describe("Pourquoi cette personne est le bon interlocuteur"),

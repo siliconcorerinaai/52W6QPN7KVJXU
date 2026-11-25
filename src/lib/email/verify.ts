@@ -3,6 +3,7 @@ import net from "node:net";
 import { config } from "@/lib/config";
 import type { EmailStatus } from "@/lib/db/schema";
 import { isRoleEmail } from "./patterns";
+import { verifyWithProviders } from "./verifiers";
 
 export type Verification = { status: EmailStatus; confidence: number; reason: string; mx?: string | null };
 
@@ -138,6 +139,15 @@ export async function verifyEmail(email: string, prior = 50): Promise<Verificati
 
   const role = isRoleEmail(e);
   const free = FREE_PROVIDERS.has(domain);
+
+  // Services de vérification spécialisés (si configurés) : verdict prioritaire
+  const verdict = await verifyWithProviders(e);
+  if (verdict && verdict.status !== "unknown") {
+    const confidence =
+      verdict.status === "valid" ? (role ? 88 : 97) : verdict.status === "catch_all" ? Math.min(80, Math.max(prior, 60)) : 0;
+    const label = { valid: "Boîte confirmée", invalid: "Adresse refusée", catch_all: "Domaine catch-all" }[verdict.status as "valid" | "invalid" | "catch_all"];
+    return { status: verdict.status, confidence, reason: `${label} par ${verdict.provider} (${verdict.detail})`, mx };
+  }
 
   if (config.email.smtpVerify && !free) {
     const catchAll = await detectCatchAll(domain);

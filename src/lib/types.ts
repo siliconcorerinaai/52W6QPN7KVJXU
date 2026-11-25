@@ -21,6 +21,7 @@ export const CampaignOfferSchema = z.object({
   product: z.string().default(""),
   valueProposition: z.string().default(""),
   callToAction: z.string().default("un échange de 15 minutes"),
+  bookingUrl: z.string().default(""),
   tone: z.string().default("professionnel et chaleureux"),
   language: z.string().default("auto"),
 });

@@ -9,6 +9,7 @@ export type JobType =
   | "contact.email"
   | "contact.write"
   | "message.send"
+  | "mailbox.sync"
   | "campaign.supervise";
 
 export type EnqueueOptions = {

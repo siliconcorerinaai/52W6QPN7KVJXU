@@ -16,6 +16,7 @@ const DEFAULT_OFFER: CampaignOffer = {
   product: "",
   valueProposition: "",
   callToAction: "un échange de 15 minutes",
+  bookingUrl: "",
   tone: "professionnel et chaleureux",
   language: "auto",
 };
@@ -159,6 +160,10 @@ function NewCampaign() {
               <div>
                 <Label>Appel à l&apos;action</Label>
                 <Input value={offer.callToAction} onChange={(e) => setO("callToAction", e.target.value)} />
+              </div>
+              <div>
+                <Label hint="(Calendly, Cal.com, Google Agenda…)">Lien de prise de rendez-vous</Label>
+                <Input type="url" value={offer.bookingUrl} onChange={(e) => setO("bookingUrl", e.target.value)} placeholder="https://calendly.com/vous/15min" />
               </div>
               <div>
                 <Label>Ton</Label>

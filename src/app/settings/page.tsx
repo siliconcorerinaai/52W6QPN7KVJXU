@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Ban, CheckCircle2, Circle, Database, Mail, Plug, Send, Trash2 } from "lucide-react";
-import { Badge, Button, Card, CardHeader, Input, Label, Textarea } from "@/components/ui";
+import { Ban, CheckCircle2, Circle, Database, Plug, Trash2 } from "lucide-react";
+import { Badge, Button, Card, CardHeader, Textarea } from "@/components/ui";
+import { MailboxesCard } from "@/components/MailboxesCard";
 
 type Settings = {
   demoMode: boolean;
@@ -15,9 +16,6 @@ type Settings = {
 
 export default function SettingsPage() {
   const [s, setS] = useState<Settings | null>(null);
-  const [to, setTo] = useState("");
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
   const [toAdd, setToAdd] = useState("");
 
   const load = useCallback(async () => {
@@ -27,15 +25,6 @@ export default function SettingsPage() {
   useEffect(() => {
     load();
   }, [load]);
-
-  async function testEmail() {
-    setTesting(true);
-    setTestResult(null);
-    const res = await fetch("/api/settings/test-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }) });
-    const json = await res.json();
-    setTestResult(res.ok ? "✅ Email de test envoyé." : `⚠️ ${json.error}`);
-    setTesting(false);
-  }
 
   async function addSuppressions() {
     const values = toAdd.split(/[\s,;]+/).filter(Boolean);
@@ -82,44 +71,7 @@ export default function SettingsPage() {
         </ul>
       </Card>
 
-      <Card>
-        <CardHeader
-          title="Envoi des emails"
-          subtitle="Utilisez une boîte dédiée à la prospection (domaine secondaire chauffé, SPF/DKIM/DMARC configurés)."
-          icon={<Mail className="size-4" />}
-        />
-        <div className="space-y-4 p-5 text-sm">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <div className="text-xs text-slate-500">Serveur SMTP</div>
-              <div className="font-medium">{s.smtp.host || "—"}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">Expéditeur</div>
-              <div className="font-medium">{s.smtp.senderEmail ? `${s.smtp.senderName} <${s.smtp.senderEmail}>` : "—"}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">Limite quotidienne</div>
-              <div className="font-medium">{s.smtp.dailyLimit} emails / jour · jours ouvrés 8h–18h</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-500">Adresse postale (pied de page légal)</div>
-              <div className="font-medium">{s.smtp.senderAddress || <span className="text-amber-700">À renseigner (SENDER_ADDRESS)</span>}</div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-4">
-            <div className="flex-1">
-              <Label>Envoyer un email de test</Label>
-              <Input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="vous@exemple.com" />
-            </div>
-            <Button onClick={testEmail} loading={testing} disabled={!s.smtp.configured || !to} icon={<Send className="size-4" />}>
-              Tester
-            </Button>
-          </div>
-          {!s.smtp.configured && <p className="text-xs text-slate-500">Renseignez SMTP_HOST, SMTP_USER, SMTP_PASS et SENDER_EMAIL pour activer l&apos;envoi.</p>}
-          {testResult && <p className="text-sm">{testResult}</p>}
-        </div>
-      </Card>
+      <MailboxesCard senderAddress={s.smtp.senderAddress} demo={s.demoMode} />
 
       <Card>
         <CardHeader

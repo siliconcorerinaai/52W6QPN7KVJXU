@@ -14,6 +14,8 @@ const EMAIL_SOURCE: Record<string, string> = {
   "pattern-guess": "format le plus courant",
   hunter: "Hunter.io",
   smtp: "confirmée par SMTP",
+  verified: "confirmée par un service de vérification",
+  provider: "base de données B2B",
   manual: "saisie manuelle",
 };
 

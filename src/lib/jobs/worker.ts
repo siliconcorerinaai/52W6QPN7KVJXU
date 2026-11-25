@@ -1,6 +1,7 @@
 import { hostname } from "node:os";
 import { claimJob, completeJob, failJob, recoverStaleJobs } from "./queue";
 import { runJob } from "@/lib/pipeline/handlers";
+import { maybeScheduleInboxSync } from "./schedule";
 import { logEvent } from "@/lib/events";
 import { errorMessage, sleep } from "@/lib/util";
 import { config, isServerless } from "@/lib/config";
@@ -44,6 +45,7 @@ export async function tick({ maxJobs = 50, deadlineMs = 50_000, concurrency = co
   const deadline = Date.now() + deadlineMs;
   let processed = 0;
   await recoverStaleJobs(STALE_MINUTES());
+  await maybeScheduleInboxSync();
   const lanes = Array.from({ length: concurrency }, async () => {
     while (processed < maxJobs && Date.now() < deadline) {
       const job = await claimJob(workerId);
@@ -81,6 +83,7 @@ export function startWorker({ concurrency = config.worker.concurrency, idleMs = 
           console.error("[worker] claim", errorMessage(e));
         }
         if (!job) {
+          await maybeScheduleInboxSync();
           await sleep(idleMs + Math.random() * 500);
           continue;
         }
