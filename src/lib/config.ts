@@ -59,11 +59,45 @@ export const config = {
     get hunter() {
       return env("HUNTER_API_KEY");
     },
+    get zerobounce() {
+      return env("ZEROBOUNCE_API_KEY");
+    },
+    get neverbounce() {
+      return env("NEVERBOUNCE_API_KEY");
+    },
+    get millionverifier() {
+      return env("MILLIONVERIFIER_API_KEY");
+    },
     get smtpVerify() {
       return bool("SMTP_VERIFY");
     },
     get smtpVerifyFrom() {
       return env("SMTP_VERIFY_FROM", "verify@example.com");
+    },
+  },
+  data: {
+    get apollo() {
+      return env("APOLLO_API_KEY");
+    },
+    get pdl() {
+      return env("PDL_API_KEY");
+    },
+  },
+  imap: {
+    get host() {
+      return env("IMAP_HOST");
+    },
+    get port() {
+      return num("IMAP_PORT", 993);
+    },
+    get secure() {
+      return bool("IMAP_SECURE", true);
+    },
+    get user() {
+      return env("IMAP_USER") || env("SMTP_USER");
+    },
+    get pass() {
+      return env("IMAP_PASS") || env("SMTP_PASS");
     },
   },
   smtp: {
@@ -112,6 +146,9 @@ export const config = {
   get cronSecret() {
     return env("CRON_SECRET");
   },
+  get encryptionSecret() {
+    return env("ENCRYPTION_KEY") || env("UNSUBSCRIBE_SECRET") || env("CRON_SECRET") || "prospecta-dev-encryption";
+  },
   get unsubscribeSecret() {
     return (
       env("UNSUBSCRIBE_SECRET") || env("CRON_SECRET") || env("ANTHROPIC_API_KEY") || env("OPENROUTER_API_KEY") || "prospecta-dev-secret"
@@ -158,7 +195,12 @@ export function providerStatus(): ProviderStatus[] {
     { id: "serper", label: "Serper (Google Search)", enabled: !!config.search.serper, detail: "SERPER_API_KEY" },
     { id: "brave", label: "Brave Search", enabled: !!config.search.brave, detail: "BRAVE_API_KEY" },
     { id: "tavily", label: "Tavily", enabled: !!config.search.tavily, detail: "TAVILY_API_KEY" },
+    { id: "apollo", label: "Apollo.io (base B2B)", enabled: !!config.data.apollo, detail: "APOLLO_API_KEY — entreprises et décideurs" },
+    { id: "pdl", label: "People Data Labs (base B2B)", enabled: !!config.data.pdl, detail: "PDL_API_KEY — entreprises et décideurs" },
     { id: "hunter", label: "Hunter.io (emails)", enabled: !!config.email.hunter, detail: "HUNTER_API_KEY" },
+    { id: "zerobounce", label: "ZeroBounce (vérification)", enabled: !!config.email.zerobounce, detail: "ZEROBOUNCE_API_KEY" },
+    { id: "neverbounce", label: "NeverBounce (vérification)", enabled: !!config.email.neverbounce, detail: "NEVERBOUNCE_API_KEY" },
+    { id: "millionverifier", label: "MillionVerifier (vérification)", enabled: !!config.email.millionverifier, detail: "MILLIONVERIFIER_API_KEY" },
     {
       id: "smtp-verify",
       label: "Vérification SMTP",

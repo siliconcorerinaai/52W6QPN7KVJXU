@@ -3,6 +3,7 @@ import { AnalysisSchema, DiscoverySchema, PeopleSchema, PlanResponseSchema, Sequ
 import type { Intelligence } from "./intelligence";
 import { digestToPrompt } from "@/lib/scrape/site";
 import { formatResults, searchProviderName, webSearch, type SearchResult } from "@/lib/search";
+import { dataProviders, searchCompaniesInDatabases, searchPeopleInDatabases } from "@/lib/data/providers";
 import { isNonCompanyDomain, mapLimit, normalizeDomain, uniq } from "@/lib/util";
 import type { CampaignPlan, CompanyCandidate } from "@/lib/types";
 
@@ -49,7 +50,11 @@ export class LlmIntelligence implements Intelligence {
 Ta mission : transformer la description d'un client idéal (ICP), écrite en une phrase, en un plan de prospection
 précis et actionnable. Les requêtes de recherche doivent être concrètes, variées (au moins 8), dans la langue des
 marchés ciblés, et viser des pages qui listent ou décrivent des entreprises cibles. Les personas sont des intitulés
-de poste réalistes (dans la langue du marché). Écris le reste du plan en français.`,
+de poste réalistes (dans la langue du marché). Écris le reste du plan en français.
+Prospecta ne prospecte que des entreprises et organisations (B2B). Si la demande vise des particuliers
+(consommateurs, personnes en difficulté, etc.) ou ne permet pas d'identifier des entreprises cibles,
+mets feasible=false, explique pourquoi dans feasibilityIssue avec une suggestion de cible B2B, et laisse
+les listes vides. Sinon feasible=true et feasibilityIssue=null.`,
       prompt: `Description du client idéal :\n"""${prompt}"""\n\nCe que vend l'utilisateur (pour comprendre le besoin) :\n${
         [offer.senderCompany, offer.product, offer.valueProposition].filter(Boolean).join(" — ") || "non précisé"
       }`,
@@ -62,17 +67,32 @@ de poste réalistes (dans la langue du marché). Écris le reste du plan en fran
     const excluded = new Set(exclude);
     const found: CompanyCandidate[] = [];
     const sources: string[] = [];
-    let via = "claude-web";
+    let via = "web-ia";
+
+    // 0) Bases de données B2B (Apollo / People Data Labs) : entreprises filtrées par secteur, pays, effectif
+    const databases = dataProviders();
+    if (databases.length) {
+      const fromDb = await searchCompaniesInDatabases(plan, count, excluded, round);
+      for (const c of fromDb) {
+        found.push({
+          name: c.name,
+          domain: c.domain,
+          reason: [c.industry, c.location, c.employees].filter(Boolean).join(" · ") || `Trouvée dans ${c.provider}`,
+          source: c.linkedinUrl ?? `https://${c.domain}`,
+        });
+      }
+      if (fromDb.length) via = databases.join("+");
+    }
 
     // 1) Moteur de recherche configuré (Serper/Brave/Tavily) + extraction par l'IA
     const provider = searchProviderName();
-    if (provider) {
+    if (provider && found.length < count) {
       const start = (round * 3) % Math.max(1, plan.searchQueries.length);
       const queries = [...plan.searchQueries, ...plan.searchQueries].slice(start, start + 4);
       const results = (await mapLimit(queries, 4, (q) => webSearch(q, 10))).flat();
       const unique = uniq(results, (r: SearchResult) => r.url);
       if (unique.length) {
-        via = provider;
+        via = via === "web-ia" ? provider : `${via}+${provider}`;
         const extracted = await structured({
           operation: "discover.extract",
           ctx,
@@ -119,7 +139,7 @@ Pour chaque entreprise : nom, domaine du site officiel (vérifié), raison de la
       });
       for (const c of res.data.companies) found.push({ name: c.name, domain: c.domain, reason: c.reason, source: c.sourceUrl ?? undefined });
       sources.push(...res.sources);
-      via = provider ? `${provider}+claude-web` : "claude-web";
+      via = [via !== "web-ia" ? via : null, provider, "web-ia"].filter(Boolean).join("+");
     }
 
     return { companies: clean().slice(0, count), sources: uniq(sources), via };
@@ -177,10 +197,16 @@ Personas ciblés (par ordre de priorité) : ${plan.personas.join(", ")}
 Personnes déjà repérées sur le site :\n${known || "aucune"}
 Nombre de contacts souhaités : ${count}`;
 
+    const dbPeople = dataProviders().length ? await searchPeopleInDatabases(company.domain, plan.personas, count + 3) : [];
+    const dbBlock = dbPeople.length
+      ? `\nDécideurs trouvés dans la base de données B2B (fiables) :\n${dbPeople
+          .map((p) => `- ${p.name} — ${p.title}${p.linkedinUrl ? ` (${p.linkedinUrl})` : ""}${p.email ? ` <${p.email}>` : ""}`)
+          .join("\n")}`
+      : "";
     const provider = searchProviderName();
     let serp = "";
     const sources: string[] = [];
-    if (provider) {
+    if (provider && dbPeople.length < count) {
       const titles = plan.personas.slice(0, 4).map((t) => `"${t}"`).join(" OR ");
       const results = await webSearch(`site:linkedin.com/in "${company.name}" (${titles})`, 10);
       const more = await webSearch(`"${company.name}" ${plan.personas.slice(0, 2).join(" ")} ${company.domain}`, 8);
@@ -189,7 +215,7 @@ Nombre de contacts souhaités : ${count}`;
       sources.push(...all.map((r) => r.url));
     }
 
-    if (!deep && (serp || company.people.length >= count)) {
+    if ((!deep && (serp || company.people.length >= count)) || dbPeople.length >= count) {
       const res = await structured({
         operation: "people.rank",
         ctx,
@@ -197,9 +223,9 @@ Nombre de contacts souhaités : ${count}`;
         effort: "low",
         schema: PeopleSchema,
         system,
-        prompt: `${context}\n\n${serp ? `Résultats de recherche :\n${serp}` : ""}`,
+        prompt: `${context}${dbBlock}\n\n${serp ? `Résultats de recherche :\n${serp}` : ""}`,
       });
-      return { ...res, sources };
+      return { ...res, sources: uniq([...sources, ...dbPeople.map((p) => p.linkedinUrl).filter((u): u is string => !!u)]) };
     }
 
     const res = await research({
@@ -210,7 +236,7 @@ Nombre de contacts souhaités : ${count}`;
       effort: "low",
       fast: true,
       system,
-      prompt: `${context}\n\n${serp ? `Résultats de recherche déjà disponibles :\n${serp}\n\n` : ""}Trouve les ${count} meilleurs décideurs (nom, poste, profil LinkedIn si trouvé) et les signaux d'achat récents de l'entreprise (recrutements, levée, expansion, nouveaux produits, actualité des 12 derniers mois).`,
+      prompt: `${context}${dbBlock}\n\n${serp ? `Résultats de recherche déjà disponibles :\n${serp}\n\n` : ""}Trouve les ${count} meilleurs décideurs (nom, poste, profil LinkedIn si trouvé) et les signaux d'achat récents de l'entreprise (recrutements, levée, expansion, nouveaux produits, actualité des 12 derniers mois).`,
     });
     return { ...res.data, sources: uniq([...sources, ...res.sources]) };
   }
@@ -229,7 +255,8 @@ Règles :
 - Écris dans la langue « ${language} » (vouvoiement en français).
 - Première ligne hyper-personnalisée, fondée sur un fait réel et précis de la recherche (signal, actualité, détail du site). Jamais de flatterie générique.
 - Un seul problème, une seule proposition de valeur, un seul appel à l'action, à faible friction.
-- 60 à 120 mots pour le premier email, 40 à 80 pour les relances. Texte brut, paragraphes courts, aucun lien, aucune pièce jointe, aucun emoji.
+- 60 à 120 mots pour le premier email, 40 à 80 pour les relances. Texte brut, paragraphes courts, aucune pièce jointe, aucun emoji.
+- Aucun lien, sauf le lien de prise de rendez-vous s'il est fourni : place-le tel quel, sur sa propre ligne, dans l'appel à l'action du premier email et de la dernière relance (pas ailleurs).
 - Les relances apportent un angle nouveau (preuve, cas client, question) et ne disent pas « je me permets de relancer ».
 - Objets courts (2 à 6 mots), naturels, en minuscules sauf noms propres.
 - N'invente aucun chiffre, client ou résultat qui ne figure pas dans l'offre.
@@ -240,6 +267,7 @@ Nom : ${offer.senderName || "—"}
 Offre : ${offer.product || "—"}
 Proposition de valeur : ${offer.valueProposition || "—"}
 Appel à l'action : ${offer.callToAction}
+Lien de prise de rendez-vous : ${offer.bookingUrl || "aucun (ne mets aucun lien)"}
 Ton : ${offer.tone}
 
 DESTINATAIRE

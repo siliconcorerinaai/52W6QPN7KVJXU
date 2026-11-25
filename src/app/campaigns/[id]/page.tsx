@@ -468,6 +468,11 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Offre</div>
                   <p className="mt-1 text-slate-800">{campaign.offer.product || "—"}</p>
                   <p className="text-slate-600">{campaign.offer.valueProposition}</p>
+                  {campaign.offer.bookingUrl && (
+                    <a href={campaign.offer.bookingUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-brand-600 hover:underline">
+                      📅 {campaign.offer.bookingUrl}
+                    </a>
+                  )}
                 </div>
                 <div className="text-slate-600">
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Réglages</div>

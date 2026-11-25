@@ -8,7 +8,7 @@ import { ChipsEditor } from "@/components/ChipsEditor";
 import { EXAMPLES } from "@/components/HeroSearch";
 import type { CampaignOffer, CampaignPlan, CampaignSettings } from "@/lib/types";
 
-type Plan = CampaignPlan & { campaignName: string };
+type Plan = CampaignPlan & { campaignName: string; feasible?: boolean; feasibilityIssue?: string | null };
 
 const DEFAULT_OFFER: CampaignOffer = {
   senderCompany: "",
@@ -16,6 +16,7 @@ const DEFAULT_OFFER: CampaignOffer = {
   product: "",
   valueProposition: "",
   callToAction: "un échange de 15 minutes",
+  bookingUrl: "",
   tone: "professionnel et chaleureux",
   language: "auto",
 };
@@ -84,7 +85,7 @@ function NewCampaign() {
     setError(null);
     setLoading("launch");
     try {
-      const { campaignName, ...planBody } = plan;
+      const { campaignName, feasible, feasibilityIssue, ...planBody } = plan;
       const res = await fetch("/api/campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -159,6 +160,10 @@ function NewCampaign() {
               <div>
                 <Label>Appel à l&apos;action</Label>
                 <Input value={offer.callToAction} onChange={(e) => setO("callToAction", e.target.value)} />
+              </div>
+              <div>
+                <Label hint="(Calendly, Cal.com, Google Agenda…)">Lien de prise de rendez-vous</Label>
+                <Input type="url" value={offer.bookingUrl} onChange={(e) => setO("bookingUrl", e.target.value)} placeholder="https://calendly.com/vous/15min" />
               </div>
               <div>
                 <Label>Ton</Label>
@@ -246,6 +251,18 @@ function NewCampaign() {
         </>
       ) : (
         <>
+          {(plan.feasible === false || !plan.searchQueries.some((q) => q.trim())) && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <div className="font-semibold">Cette demande ne permet pas de cibler des entreprises</div>
+              <p className="mt-1">
+                {plan.feasibilityIssue ||
+                  "Le plan ne contient aucune requête de recherche. Décrivez des entreprises ou organisations à prospecter (secteur, zone, taille, situation)."}
+              </p>
+              <Button variant="secondary" size="sm" className="mt-3" onClick={() => setPlan(null)} icon={<ArrowLeft className="size-4" />}>
+                Reformuler la demande
+              </Button>
+            </div>
+          )}
           <Card>
             <CardHeader title="Ciblage" subtitle={`« ${prompt} »`} icon={<Bot className="size-4" />} />
             <div className="grid gap-4 p-5 sm:grid-cols-2">
@@ -309,7 +326,13 @@ function NewCampaign() {
               <span className="text-sm text-slate-500">
                 Objectif : {settings.targetCompanies} entreprises · {settings.contactsPerCompany} décideur(s) chacune
               </span>
-              <Button size="lg" onClick={launch} loading={loading === "launch"} icon={<Rocket className="size-4" />}>
+              <Button
+                size="lg"
+                onClick={launch}
+                loading={loading === "launch"}
+                disabled={plan.feasible === false || !plan.searchQueries.some((q) => q.trim())}
+                icon={<Rocket className="size-4" />}
+              >
                 Lancer la prospection
               </Button>
             </div>

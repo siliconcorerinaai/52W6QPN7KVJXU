@@ -3,12 +3,12 @@
 Décrivez votre client idéal **en une phrase**. Prospecta s'occupe du reste :
 
 1. **Plan de ciblage** : l'IA transforme votre phrase en ICP structuré (secteurs, zones, taille, décideurs, signaux d'achat, exclusions, requêtes de recherche), que vous pouvez ajuster.
-2. **Découverte** : un agent fait de la recherche web en direct (au-delà de LinkedIn) pour trouver des entreprises réelles, par tours successifs et sous des angles variés, jusqu'à atteindre l'objectif.
+2. **Découverte** : les bases de données B2B (Apollo.io, People Data Labs) si elles sont configurées, puis un agent qui fait de la recherche web en direct (au-delà de LinkedIn), par tours successifs et sous des angles variés, jusqu'à atteindre l'objectif.
 3. **Qualification** : chaque site est exploré (accueil, à propos, équipe, contact, mentions légales, carrières). L'IA attribue une note d'adéquation de 0 à 100 avec ses raisons, détecte les signaux d'achat (recrutements, levées, expansion…) et les technologies utilisées.
 4. **Décideurs** : identification des bons interlocuteurs selon vos personas (site, mentions légales, recherche web, profils LinkedIn publics indexés).
-5. **Emails** : extraction des adresses publiées, déduction du format de l'entreprise (`prenom.nom@`, `pnom@`…), vérification (syntaxe, domaines jetables, MX, SMTP en option, détection catch-all) et score de confiance.
+5. **Emails** : extraction des adresses publiées, déduction du format de l'entreprise (`prenom.nom@`, `pnom@`…), vérification (syntaxe, domaines jetables, MX, SMTP en option, détection catch-all, puis ZeroBounce / NeverBounce / MillionVerifier en cascade s'ils sont configurés) et score de confiance.
 6. **Séquences personnalisées** : 1 à 5 emails par prospect, rédigés à partir de la recherche réelle (signal, actualité), dans la langue du prospect.
-7. **Envoi maîtrisé** : validation humaine, SMTP, envoi les jours ouvrés de 8 h à 18 h, plafond quotidien, étalement, relances en fil, arrêt automatique en cas de réponse, désinscription en un clic, liste d'exclusion.
+7. **Envoi maîtrisé** : validation humaine, plusieurs boîtes d'envoi en rotation (limite quotidienne par boîte, relances depuis la même boîte et dans le même fil), envoi les jours ouvrés de 8 h à 18 h, lien de prise de rendez-vous (Calendly, Cal.com…), lecture des réponses et des rebonds par IMAP (relances arrêtées automatiquement), désinscription en un clic, liste d'exclusion.
 8. **Export** : CSV (compatible Excel) et webhook JSON (n8n, Make, Zapier, CRM).
 
 Le tout est piloté par un **fil d'activité en direct**, avec un **entonnoir** (trouvées → qualifiées → décideurs → emails → contactés → réponses) et une **estimation du coût IA** par campagne.
@@ -44,7 +44,11 @@ Toutes les options sont décrites dans [`.env.example`](.env.example). Les princ
 | `OPENROUTER_MODEL` / `OPENROUTER_MODEL_FAST` | Identifiants de modèles OpenRouter (par défaut `anthropic/claude-opus-5.5` ; vérifiez l'identifiant exact sur openrouter.ai/models). |
 | `DATABASE_URL` | Postgres externe (Supabase, Neon, RDS…). Vide → PGlite embarqué. Les tables sont créées dans un schéma dédié `prospecta`. |
 | `SERPER_API_KEY` / `BRAVE_API_KEY` / `TAVILY_API_KEY` | Moteur de recherche complémentaire (optionnel) : plus de résultats et moins de recherches facturées par Claude. |
+| `APOLLO_API_KEY` / `PDL_API_KEY` | Bases de données B2B (Apollo.io, People Data Labs) : entreprises filtrées par secteur, pays et effectif, décideurs déjà identifiés. |
 | `HUNTER_API_KEY` | Format d'email et recherche d'adresses via Hunter.io (optionnel). |
+| `ZEROBOUNCE_API_KEY` / `NEVERBOUNCE_API_KEY` / `MILLIONVERIFIER_API_KEY` | Vérification des emails par des services spécialisés, interrogés en cascade jusqu'à un verdict définitif. |
+| `IMAP_HOST` (+ `IMAP_PORT`, `IMAP_USER`, `IMAP_PASS`) | Lecture des réponses et rebonds de la boîte par défaut. Les boîtes ajoutées depuis l'interface ont leur propre réglage IMAP. |
+| `ENCRYPTION_KEY` | Chiffre les mots de passe des boîtes d'envoi stockés en base (par défaut `UNSUBSCRIBE_SECRET`). |
 | `SMTP_VERIFY` | Vérification des boîtes par dialogue SMTP (`RCPT TO`). Nécessite le port 25 sortant, souvent bloqué chez les hébergeurs cloud. |
 | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SENDER_EMAIL`, `SENDER_NAME` | Envoi des emails. |
 | `SENDER_ADDRESS` | Adresse postale affichée en pied d'email. |
@@ -54,6 +58,15 @@ Toutes les options sont décrites dans [`.env.example`](.env.example). Les princ
 Les appels à Claude activent le **repli côté serveur** (`fallbacks: "default"`) : si le modèle principal décline une requête, l'API la relance automatiquement sur un modèle de repli.
 
 **Anthropic ou OpenRouter ?** Avec Anthropic, Claude enchaîne lui-même plusieurs recherches web et affine ses requêtes : c'est le mode le plus précis. Avec OpenRouter, chaque étape fait une recherche web (plugin `web`) dont les résultats sont fournis au modèle choisi : plus simple, un peu moins exhaustif. Les deux produisent des sorties JSON validées.
+
+## Boîtes d'envoi et réponses
+
+Dans **Paramètres → Boîtes d'envoi**, ajoutez autant de boîtes que nécessaire (préréglages Google Workspace, Microsoft 365, Zoho, OVHcloud). Chaque boîte est testée avant d'être enregistrée, son mot de passe est chiffré, et elle a sa propre limite quotidienne. Chaque nouvelle séquence part de la boîte la moins chargée ; ses relances partent de la même boîte, en réponse au premier email.
+
+Avec un accès IMAP, Prospecta lit les boîtes de réception toutes les 5 minutes (tant que des réponses sont attendues) :
+- une **réponse** d'un prospect le marque « a répondu » et arrête ses relances ;
+- un **rebond** (rapport de non-remise) marque l'adresse invalide ;
+- les **réponses automatiques** (absence, congés) sont ignorées.
 
 ## Comment ça marche
 
@@ -176,8 +189,7 @@ Les tests des fournisseurs IA utilisent de faux serveurs (flux SSE pour Claude, 
 
 ## Pistes d'évolution
 
-- Détection automatique des réponses (IMAP / Gmail / Outlook) et classification par l'IA.
-- Rotation de plusieurs boîtes d'envoi et préchauffage.
+- Classification des réponses par l'IA (intéressé, pas maintenant, pas la bonne personne…).
+- Préchauffage progressif des nouvelles boîtes d'envoi.
 - Synchronisation native avec HubSpot, Pipedrive et Salesforce.
-- Enrichissement par des fournisseurs de données (registres d'entreprises, technographie).
 - Comptes utilisateurs et espaces d'équipe.

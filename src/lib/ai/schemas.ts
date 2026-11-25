@@ -3,6 +3,13 @@ import { CampaignPlanSchema } from "@/lib/types";
 
 export const PlanResponseSchema = CampaignPlanSchema.extend({
   campaignName: z.string().describe("Nom court de campagne (3 à 6 mots)"),
+  feasible: z
+    .boolean()
+    .describe("true si la demande décrit des entreprises ou organisations à prospecter (B2B), false sinon"),
+  feasibilityIssue: z
+    .string()
+    .nullable()
+    .describe("Si feasible=false : explication courte en français et suggestion de cible B2B ; sinon null"),
 });
 export type PlanResponse = z.infer<typeof PlanResponseSchema>;
 
@@ -59,7 +66,7 @@ export const PeopleSchema = z.object({
       title: z.string().describe("Intitulé de poste actuel"),
       seniority: z.enum(["c_level", "vp", "director", "manager", "senior", "other"]),
       linkedinUrl: z.string().nullable(),
-      email: z.string().nullable().describe("Email uniquement s'il est publié explicitement"),
+      email: z.string().nullable().describe("Email uniquement s'il est publié explicitement ou fourni par la base de données B2B"),
       sourceUrl: z.string().nullable(),
       relevance: z.number().int().min(0).max(100).describe("Pertinence vis-à-vis des personas ciblés"),
       reason: z.string().describe("Pourquoi cette personne est le bon interlocuteur"),

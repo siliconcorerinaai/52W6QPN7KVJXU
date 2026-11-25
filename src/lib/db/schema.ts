@@ -102,6 +102,7 @@ export const contacts = prospecta.table(
     status: text().$type<ContactStatus>().notNull().default("new"),
     sources: jsonb().$type<string[]>().notNull().default([]),
     notes: text(),
+    repliedAt: timestamp({ withTimezone: true }),
     createdAt: now(),
     updatedAt: now(),
   },
@@ -129,6 +130,7 @@ export const messages = prospecta.table(
     scheduledAt: timestamp({ withTimezone: true }),
     sentAt: timestamp({ withTimezone: true }),
     providerId: text(),
+    mailboxId: text(),
     error: text(),
     createdAt: now(),
     updatedAt: now(),
@@ -191,6 +193,35 @@ export const aiUsage = prospecta.table(
   (t) => [index("ai_usage_campaign").on(t.campaignId)],
 );
 
+/** Boîtes d'envoi (rotation, limite quotidienne, détection des réponses par IMAP). */
+export const mailboxes = prospecta.table("mailboxes", {
+  id: text().primaryKey(),
+  label: text().notNull(),
+  fromName: text().notNull().default(""),
+  fromEmail: text().notNull(),
+  smtpHost: text().notNull(),
+  smtpPort: integer().notNull().default(587),
+  smtpSecure: boolean().notNull().default(false),
+  smtpUser: text().notNull(),
+  smtpPassEnc: text().notNull(),
+  imapHost: text(),
+  imapPort: integer().notNull().default(993),
+  imapSecure: boolean().notNull().default(true),
+  dailyLimit: integer().notNull().default(40),
+  enabled: boolean().notNull().default(true),
+  lastSyncAt: timestamp({ withTimezone: true }),
+  lastError: text(),
+  createdAt: now(),
+  updatedAt: now(),
+});
+
+/** Petit stockage clé / valeur (curseurs de synchronisation…). */
+export const appState = prospecta.table("app_state", {
+  key: text().primaryKey(),
+  value: jsonb().$type<Record<string, unknown>>().notNull(),
+  updatedAt: now(),
+});
+
 export const suppressions = prospecta.table("suppressions", {
   value: text().primaryKey(), // email ou @domaine
   reason: text().notNull().default("unsubscribe"),
@@ -219,3 +250,4 @@ export type Contact = typeof contacts.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
 export type EventRow = typeof events.$inferSelect;
+export type Mailbox = typeof mailboxes.$inferSelect;

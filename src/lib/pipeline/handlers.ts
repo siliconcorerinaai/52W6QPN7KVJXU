@@ -19,8 +19,11 @@ import { enqueue, pendingJobCount, rescheduleJob, type JobType } from "@/lib/job
 import { crawlCompanySite } from "@/lib/scrape/site";
 import { candidateEmails, fromHunterPattern, inferPattern, isRoleEmail, type PatternId } from "@/lib/email/patterns";
 import { detectCatchAll, domainHasMx, verifyEmail, type Verification } from "@/lib/email/verify";
+import { verificationProviders } from "@/lib/email/verifiers";
 import { hunterDomainPattern, hunterFindEmail } from "@/lib/email/hunter";
 import { nextSendSlot, sendEmail } from "@/lib/outreach/mailer";
+import { NoMailboxError, pickMailbox, type SendingMailbox } from "@/lib/outreach/mailboxes";
+import { syncAllInboxes } from "@/lib/outreach/inbox";
 import { errorMessage, hashString, isNonCompanyDomain, newId, normalizeDomain, splitName, uniq } from "@/lib/util";
 import type { PersonHint, Signal } from "@/lib/types";
 import { pushWebhook } from "./export";
@@ -434,18 +437,27 @@ async function findEmail(job: Job) {
           .where(eq(contacts.id, contactId));
         return;
       }
-      if (config.email.smtpVerify && !config.demoMode) {
-        const catchAll = await detectCatchAll(domain);
+      const providers = config.demoMode ? [] : verificationProviders();
+      if ((config.email.smtpVerify || providers.length) && !config.demoMode) {
+        const catchAll = config.email.smtpVerify ? await detectCatchAll(domain) : null;
         if (catchAll !== null && co.catchAll !== catchAll) {
           await db.update(companies).set({ catchAll }).where(eq(companies.id, co.id));
         }
-        if (catchAll === false) {
-          for (const cand of candidates.slice(0, 6)) {
+        if (catchAll !== true) {
+          // Chaque vérification par un service est facturée : 3 essais au plus (6 en SMTP direct)
+          for (const cand of candidates.slice(0, providers.length ? 3 : 6)) {
             const v = await verifyEmail(cand, 60);
             if (v.status === "valid") {
               email = cand;
               verification = v;
-              source = "smtp";
+              source = providers.length ? "verified" : "smtp";
+              break;
+            }
+            if (v.status === "catch_all") {
+              // Domaine qui accepte tout : impossible de départager les variantes, on garde la plus probable
+              email = candidates[0];
+              verification = { ...v, confidence: pattern ? 75 : 55 };
+              source = pattern ? "pattern" : "pattern-guess";
               break;
             }
           }
@@ -539,17 +551,6 @@ async function isSuppressed(email: string) {
   return rows.length > 0;
 }
 
-async function sentToday(): Promise<number> {
-  const db = await getDb();
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const [row] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(messages)
-    .where(and(eq(messages.status, "sent"), sql`${messages.sentAt} >= ${start.toISOString()}`));
-  return row?.n ?? 0;
-}
-
 async function sendMessage(job: Job) {
   const messageId = job.payload.messageId as string;
   const db = await getDb();
@@ -568,15 +569,31 @@ async function sendMessage(job: Job) {
     return cancel("Adresse dans la liste d'exclusion");
   }
 
+  // Le premier email de la séquence (pour le fil et la boîte d'envoi des relances)
+  const [first] =
+    msg.step > 1
+      ? await db
+          .select()
+          .from(messages)
+          .where(and(eq(messages.contactId, ct.id), eq(messages.step, 1)))
+      : [undefined];
+
+  let mailbox: SendingMailbox | null = null;
   if (!config.demoMode) {
-    if (!config.smtp.configured) {
-      await db.update(messages).set({ status: "failed", error: "SMTP non configuré", updatedAt: new Date() }).where(eq(messages.id, msg.id));
-      await logEvent(msg.campaignId, "error", "send", "Envoi impossible : configurez SMTP_HOST / SENDER_EMAIL (Paramètres).");
-      return;
-    }
     const slot = nextSendSlot();
     if (slot.getTime() - Date.now() > 60_000) return rescheduleJob(job, slot);
-    if ((await sentToday()) >= config.smtp.dailyLimit) {
+    try {
+      mailbox = await pickMailbox(first?.mailboxId ?? null);
+    } catch (e) {
+      if (e instanceof NoMailboxError) {
+        await db.update(messages).set({ status: "failed", error: e.message, updatedAt: new Date() }).where(eq(messages.id, msg.id));
+        await logEvent(msg.campaignId, "error", "send", `Envoi impossible : ${e.message}`);
+        return;
+      }
+      throw e;
+    }
+    if (!mailbox) {
+      // Toutes les boîtes ont atteint leur limite du jour : on reprend demain
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       tomorrow.setHours(0, 0, 0, 0);
@@ -586,15 +603,9 @@ async function sendMessage(job: Job) {
 
   let subject = msg.subject;
   let inReplyTo: string | null = null;
-  if (msg.step > 1) {
-    const [first] = await db
-      .select()
-      .from(messages)
-      .where(and(eq(messages.contactId, ct.id), eq(messages.step, 1)));
-    if (first?.status === "sent") {
-      subject = `Re: ${first.subject}`;
-      inReplyTo = first.providerId;
-    }
+  if (first?.status === "sent") {
+    subject = `Re: ${first.subject}`;
+    inReplyTo = first.providerId;
   }
 
   let providerId: string;
@@ -602,7 +613,7 @@ async function sendMessage(job: Job) {
     if (config.demoMode) {
       providerId = `demo-${newId()}`;
     } else {
-      const res = await sendEmail({ to: ct.email, toName: ct.fullName, subject, body: msg.body, contactId: ct.id, inReplyTo });
+      const res = await sendEmail({ to: ct.email, toName: ct.fullName, subject, body: msg.body, contactId: ct.id, inReplyTo }, mailbox!);
       providerId = res.messageId;
     }
   } catch (e) {
@@ -620,14 +631,14 @@ async function sendMessage(job: Job) {
   const now = new Date();
   await db
     .update(messages)
-    .set({ status: "sent", sentAt: now, providerId, subject, error: null, updatedAt: now })
+    .set({ status: "sent", sentAt: now, providerId, subject, mailboxId: mailbox?.id ?? "demo", error: null, updatedAt: now })
     .where(eq(messages.id, msg.id));
   await db.update(contacts).set({ status: "sent", updatedAt: now }).where(eq(contacts.id, ct.id));
   await logEvent(
     msg.campaignId,
     "success",
     "send",
-    `📨 ${config.demoMode ? "[démo — non envoyé] " : ""}Email ${msg.step} envoyé à ${ct.fullName} <${ct.email}>`,
+    `📨 ${config.demoMode ? "[démo — non envoyé] " : ""}Email ${msg.step} envoyé à ${ct.fullName} <${ct.email}>${mailbox ? ` depuis ${mailbox.fromEmail}` : ""}`,
     { contactId: ct.id },
   );
 
@@ -644,6 +655,14 @@ async function sendMessage(job: Job) {
   }
 }
 
+// ───────────────────────────── Réponses et rebonds ─────────────────────────────
+
+async function syncInboxes() {
+  const r = await syncAllInboxes();
+  console.log(`[inbox] ${r.mailboxes} boîte(s), ${r.scanned} message(s) lus, ${r.replies} réponse(s), ${r.bounces} rebond(s)`);
+  if (r.errors.length && r.errors.length === r.mailboxes) throw new Error(r.errors.join(" ; "));
+}
+
 const HANDLERS: Record<JobType, Handler> = {
   "campaign.discover": discover,
   "campaign.supervise": supervise,
@@ -652,6 +671,7 @@ const HANDLERS: Record<JobType, Handler> = {
   "contact.email": findEmail,
   "contact.write": writeContact,
   "message.send": sendMessage,
+  "mailbox.sync": syncInboxes,
 };
 
 export async function runJob(job: Job) {

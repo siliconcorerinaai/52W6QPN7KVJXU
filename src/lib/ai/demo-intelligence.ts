@@ -44,6 +44,8 @@ export class DemoIntelligence implements Intelligence {
     const words = prompt.split(/[\s,.;]+/).filter((w) => w.length > 4).slice(0, 6);
     return {
       campaignName: `Prospection — ${prompt.slice(0, 40)}${prompt.length > 40 ? "…" : ""}`,
+      feasible: true,
+      feasibilityIssue: null,
       summary: prompt,
       industries: words.length ? words.slice(0, 3) : ["Services B2B"],
       geographies: ["France"],
@@ -140,7 +142,7 @@ export class DemoIntelligence implements Intelligence {
     const all = [
       {
         subject: `${company.name} et ${offer.product ? offer.product.split(" ").slice(0, 3).join(" ") : "votre croissance"}`,
-        body: `Bonjour ${first},\n\nUne actualité a retenu mon attention chez ${company.name} : « ${signal.replace(/\.$/, "")} ». Dans ce contexte, ${valueProp.replace(/\.$/, "")}.\n\nSeriez-vous ouvert(e) à ${offer.callToAction} la semaine prochaine pour voir si c'est pertinent pour vous ?\n\nBien à vous,\n${sender}`,
+        body: `Bonjour ${first},\n\nUne actualité a retenu mon attention chez ${company.name} : « ${signal.replace(/\.$/, "")} ». Dans ce contexte, ${valueProp.replace(/\.$/, "")}.\n\nSeriez-vous ouvert(e) à ${offer.callToAction} la semaine prochaine pour voir si c'est pertinent pour vous ?${offer.bookingUrl ? `\nVous pouvez choisir un créneau ici :\n${offer.bookingUrl}` : ""}\n\nBien à vous,\n${sender}`,
         delayDays: 0,
       },
       {
@@ -150,7 +152,7 @@ export class DemoIntelligence implements Intelligence {
       },
       {
         subject: `dernier message ${first.toLowerCase()}`,
-        body: `Bonjour ${first},\n\nJe ne veux pas encombrer votre boîte. Si le sujet revient d'actualité chez ${company.name}, je reste disponible.\n\nBonne continuation,\n${sender}`,
+        body: `Bonjour ${first},\n\nJe ne veux pas encombrer votre boîte. Si le sujet revient d'actualité chez ${company.name}, je reste disponible.${offer.bookingUrl ? `\nMon agenda : ${offer.bookingUrl}` : ""}\n\nBonne continuation,\n${sender}`,
         delayDays: followUpDays,
       },
     ];
