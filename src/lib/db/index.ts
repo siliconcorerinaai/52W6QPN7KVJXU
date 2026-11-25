@@ -12,6 +12,22 @@ const globalForDb = globalThis as unknown as { __prospectaDb?: DbState };
 /** Journal de migrations propre à Prospecta (n'interfère pas avec celui d'une autre application). */
 const MIGRATIONS = { migrationsSchema: "prospecta", migrationsTable: "__migrations" };
 
+/**
+ * Applique les migrations, avec quelques nouvelles tentatives : en serverless, plusieurs
+ * instances peuvent démarrer en même temps ; la seconde trouve alors les migrations déjà faites.
+ */
+async function migrateWithRetry(run: () => Promise<void>) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run();
+    } catch (e) {
+      if (attempt >= 4) throw e;
+      console.warn(`[db] migration interrompue (tentative ${attempt}) :`, e instanceof Error ? e.message : e);
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
+    }
+  }
+}
+
 /** URL Postgres : DATABASE_URL, ou POSTGRES_URL fournie par l'intégration Supabase de Vercel. */
 export function databaseUrl(): string | undefined {
   return (process.env.DATABASE_URL || process.env.POSTGRES_URL || "").trim() || undefined;
@@ -39,12 +55,13 @@ async function create(): Promise<DbState> {
     const { migrate } = await import("drizzle-orm/postgres-js/migrator");
     const client = postgres(url, {
       max: Number(process.env.DB_POOL_SIZE ?? 6),
+      idle_timeout: 20,
       prepare: false, // compatible avec le pooler Supabase (Supavisor)
       ssl: sslFor(url),
       onnotice: () => {},
     });
     const db = drizzle(client, { schema, casing: "snake_case" });
-    const ready = migrate(db, { migrationsFolder, ...MIGRATIONS });
+    const ready = migrateWithRetry(() => migrate(db, { migrationsFolder, ...MIGRATIONS }));
     return { db: db as unknown as DB, ready, driver: "postgres" };
   }
 
@@ -69,7 +86,16 @@ export async function getDb(): Promise<DB> {
     await pending;
   }
   const state = globalForDb.__prospectaDb!;
-  await state.ready;
+  try {
+    await state.ready;
+  } catch (e) {
+    // Échec (base injoignable, migration en conflit…) : la prochaine requête retentera
+    if (globalForDb.__prospectaDb === state) {
+      globalForDb.__prospectaDb = undefined;
+      pending = undefined;
+    }
+    throw e;
+  }
   return state.db;
 }
 
