@@ -39,12 +39,20 @@ const PRESETS: Record<string, { smtpHost: string; smtpPort: number; smtpSecure: 
     hint: "Microsoft 365 : l'authentification SMTP doit être activée pour la boîte (centre d'administration Exchange).",
   },
   zoho: {
+    smtpHost: "smtp.zoho.com",
+    smtpPort: 465,
+    smtpSecure: true,
+    imapHost: "imap.zoho.com",
+    imapPort: 993,
+    hint: "Zoho Mail (compte sur zoho.com) : activez l'accès IMAP dans les paramètres Zoho et utilisez un mot de passe d'application si la double authentification est active.",
+  },
+  zohoEu: {
     smtpHost: "smtp.zoho.eu",
     smtpPort: 465,
     smtpSecure: true,
     imapHost: "imap.zoho.eu",
     imapPort: 993,
-    hint: "Zoho Mail (UE) : activez l'accès IMAP dans les paramètres Zoho et utilisez un mot de passe d'application.",
+    hint: "Zoho Mail (compte sur zoho.eu) : activez l'accès IMAP dans les paramètres Zoho et utilisez un mot de passe d'application si la double authentification est active.",
   },
   ovh: {
     smtpHost: "ssl0.ovh.net",
@@ -239,6 +247,7 @@ export function MailboxesCard({ demo }: { demo: boolean }) {
                   ["google", "Google Workspace / Gmail"],
                   ["microsoft", "Microsoft 365"],
                   ["zoho", "Zoho Mail"],
+                  ["zohoEu", "Zoho Mail (Europe)"],
                   ["ovh", "OVHcloud"],
                   ["other", "Autre"],
                 ] as const
