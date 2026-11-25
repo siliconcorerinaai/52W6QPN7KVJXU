@@ -1,6 +1,9 @@
 import { z } from "zod";
+import { kickWorker } from "@/lib/jobs/kick";
 import { handle, json, type IdParams } from "@/lib/api";
 import { findMore } from "@/lib/pipeline/campaigns";
+
+export const maxDuration = 300;
 
 const Body = z.object({ extra: z.number().int().min(1).max(500).default(10) });
 
@@ -9,6 +12,7 @@ export async function POST(req: Request, { params }: IdParams) {
     const { id } = await params;
     const { extra } = Body.parse(await req.json().catch(() => ({})));
     await findMore(id, extra);
+    kickWorker();
     return json({ ok: true });
   });
 }

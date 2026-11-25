@@ -109,6 +109,7 @@ Railway fait tourner l'application en continu : l'interface et le worker de l'ag
    - `DATABASE_URL` : la chaîne Supabase de l'étape 1 ;
    - `ANTHROPIC_API_KEY` **ou** `OPENROUTER_API_KEY` ;
    - `UNSUBSCRIBE_SECRET` : une longue chaîne aléatoire ;
+   - `APP_PASSWORD` : le mot de passe d'accès à l'application (sans lui, elle est ouverte à quiconque connaît son adresse) ;
    - `APP_URL` : l'URL publique du service (après l'étape 4).
    Puis, pour envoyer des emails : `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SENDER_EMAIL`, `SENDER_NAME`, `SENDER_ADDRESS`.
 4. **Settings → Networking → Generate Domain**, reportez l'URL dans `APP_URL`, puis redéployez.
@@ -125,7 +126,25 @@ DATABASE_URL=postgres://… npm run build && npm start
 
 Pour séparer le web et le traitement : `EMBEDDED_WORKER=false` sur le serveur web, et `npm run worker` dans un second process (Postgres obligatoire dans ce cas).
 
-**Serverless (Vercel…)** : le worker embarqué est désactivé. Utilisez une base Postgres (`DATABASE_URL`, ou `POSTGRES_URL` fournie par l'intégration Supabase de Vercel) et appelez `GET /api/cron/tick` toutes les minutes depuis un cron, avec l'en-tête `Authorization: Bearer $CRON_SECRET`. Chaque appel traite la file pendant 4 minutes au plus.
+### Vercel + Supabase
+
+Sur Vercel il n'y a pas de processus permanent : la file de tâches avance après chaque requête de l'interface (tant qu'une page de campagne est ouverte) et grâce à un appel de `/api/cron/tick` chaque minute. Comme les crons Vercel à la minute exigent un plan Pro, le plus simple est de les confier à **Supabase** (`pg_cron` + `pg_net`) :
+
+```sql
+create extension if not exists pg_cron with schema pg_catalog;
+create extension if not exists pg_net with schema extensions;
+select vault.create_secret('<CRON_SECRET>', 'prospecta_cron_secret');
+select cron.schedule('prospecta-tick', '* * * * *', $$
+  select net.http_get(
+    url := 'https://<votre-app>.vercel.app/api/cron/tick',
+    headers := jsonb_build_object('Authorization', 'Bearer ' ||
+      (select decrypted_secret from vault.decrypted_secrets where name = 'prospecta_cron_secret')),
+    timeout_milliseconds := 10000
+  );
+$$);
+```
+
+Variables Vercel : `DATABASE_URL` (Supabase, **Transaction pooler**, port 6543), `APP_PASSWORD`, `CRON_SECRET`, `UNSUBSCRIBE_SECRET`, `APP_URL`, la clé IA, et les variables SMTP pour l'envoi.
 
 ## Coûts
 

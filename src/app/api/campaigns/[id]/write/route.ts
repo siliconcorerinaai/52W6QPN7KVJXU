@@ -1,9 +1,12 @@
 import { z } from "zod";
 import { inArray, and, eq } from "drizzle-orm";
+import { kickWorker } from "@/lib/jobs/kick";
 import { handle, json, type IdParams } from "@/lib/api";
 import { requestWrite } from "@/lib/pipeline/campaigns";
 import { getDb } from "@/lib/db";
 import { contacts } from "@/lib/db/schema";
+
+export const maxDuration = 300;
 
 const Body = z.object({ contactIds: z.array(z.string()).optional() });
 
@@ -21,6 +24,8 @@ export async function POST(req: Request, { params }: IdParams) {
         .where(and(eq(contacts.campaignId, id), inArray(contacts.status, ["ready"])));
       ids = rows.map((r) => r.id);
     }
-    return json({ queued: await requestWrite(ids) });
+    const queued = await requestWrite(ids);
+    kickWorker();
+    return json({ queued });
   });
 }
