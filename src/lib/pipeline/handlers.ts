@@ -23,6 +23,8 @@ import { verificationProviders } from "@/lib/email/verifiers";
 import { hunterDomainPattern, hunterFindEmail } from "@/lib/email/hunter";
 import { nextSendSlot, sendEmail } from "@/lib/outreach/mailer";
 import { NoMailboxError, pickMailbox, type SendingMailbox } from "@/lib/outreach/mailboxes";
+import { campaignOwner } from "@/lib/ownership";
+import { quotaForCampaignOwner } from "@/lib/quota";
 import { syncAllInboxes } from "@/lib/outreach/inbox";
 import { errorMessage, hashString, isNonCompanyDomain, newId, normalizeDomain, splitName, uniq } from "@/lib/util";
 import type { PersonHint, Signal } from "@/lib/types";
@@ -69,7 +71,21 @@ async function discover(job: Job) {
   const rate = analyzed >= 5 ? Math.min(0.9, Math.max(0.2, qualified / analyzed)) : 0.6;
   const missing = c.settings.targetCompanies - qualified - Math.round(inFlight * rate);
   if (missing <= 0) return;
-  const count = Math.min(30, Math.max(5, Math.ceil(missing / rate)));
+  let count = Math.min(30, Math.max(5, Math.ceil(missing / rate)));
+
+  // Quota mensuel du compte : au-delà, la campagne se met en pause jusqu'au mois suivant.
+  const quota = await quotaForCampaignOwner(c.userId);
+  if (quota.remaining <= 0) {
+    await db.update(campaigns).set({ status: "paused", updatedAt: new Date() }).where(eq(campaigns.id, campaignId));
+    await logEvent(
+      campaignId,
+      "warn",
+      "quota",
+      `📊 Limite mensuelle atteinte (${quota.limit} entreprises analysées ce mois-ci). La campagne est en pause : relancez-la le mois prochain, ou contactez-nous pour augmenter votre limite.`,
+    );
+    return;
+  }
+  count = Math.min(count, quota.remaining);
 
   const round = c.discoveryRounds + 1;
   await logEvent(campaignId, "info", "discover", `🔎 Recherche n°${round} : je cherche ${count} nouvelles entreprises…`);
@@ -545,10 +561,14 @@ async function writeContact(job: Job) {
 
 // ───────────────────────────── Envoi ─────────────────────────────
 
-async function isSuppressed(email: string) {
+/** Adresse ou domaine exclu par le propriétaire de la campagne, ou pour tous les comptes. */
+async function isSuppressed(email: string, ownerId: string) {
   const db = await getDb();
   const domain = `@${email.split("@")[1]}`;
-  const rows = await db.select().from(suppressions).where(inArray(suppressions.value, [email.toLowerCase(), domain]));
+  const rows = await db
+    .select()
+    .from(suppressions)
+    .where(and(inArray(suppressions.value, [email.toLowerCase(), domain]), inArray(suppressions.userId, [ownerId, ""])));
   return rows.length > 0;
 }
 
@@ -565,7 +585,8 @@ async function sendMessage(job: Job) {
 
   if (["replied", "unsubscribed", "bounced"].includes(ct.status)) return cancel(`Contact ${ct.status}`);
   if (!ct.email || ct.emailStatus === "invalid") return cancel("Pas d'email valide");
-  if (await isSuppressed(ct.email)) {
+  const owner = await campaignOwner(msg.campaignId);
+  if (await isSuppressed(ct.email, owner.id)) {
     await db.update(contacts).set({ status: "unsubscribed" }).where(eq(contacts.id, ct.id));
     return cancel("Adresse dans la liste d'exclusion");
   }
@@ -584,7 +605,7 @@ async function sendMessage(job: Job) {
     const slot = nextSendSlot();
     if (slot.getTime() - Date.now() > 60_000) return rescheduleJob(job, slot);
     try {
-      mailbox = await pickMailbox(first?.mailboxId ?? null);
+      mailbox = await pickMailbox(owner, first?.mailboxId ?? null);
     } catch (e) {
       if (e instanceof NoMailboxError) {
         await db.update(messages).set({ status: "failed", error: e.message, updatedAt: new Date() }).where(eq(messages.id, msg.id));

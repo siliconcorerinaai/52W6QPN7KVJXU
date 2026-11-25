@@ -1,65 +1,43 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isPublicPath, SESSION_COOKIE } from "@/lib/session-cookie";
 
 /**
- * Accès par mot de passe (HTTP Basic) :
- * - APP_PASSWORD : mot de passe des utilisateurs ;
- * - ADMIN_PASSWORD : mot de passe du propriétaire, seul à voir l'administration (fournisseurs, coûts,
- *   erreurs détaillées). Sans ADMIN_PASSWORD, APP_PASSWORD donne l'accès administrateur.
- * Sans aucun des deux (développement local), tout est ouvert en administrateur.
- * Restent publics : la sonde de santé, la désinscription (liens dans les emails) et le cron (protégé
- * par son propre secret). Le rôle est transmis à l'application dans un en-tête que le navigateur ne
- * peut pas imposer : il est toujours réécrit ici.
+ * Accès par compte : sans cookie de session, les pages redirigent vers /login et l'API répond 401.
+ * La validité de la session est vérifiée en base par chaque page et route (src/lib/session.ts).
+ * Les requêtes qui modifient des données doivent venir du site lui-même (protection CSRF, en plus
+ * du cookie SameSite=Lax). Le chemin demandé est transmis au layout (x-pathname).
  */
-const PUBLIC_PATHS = [/^\/api\/health$/, /^\/api\/unsubscribe(\/|$)/, /^\/api\/cron\//];
-const ROLE_HEADER = "x-prospecta-role";
+const CROSS_ORIGIN_OK = [/^\/api\/unsubscribe(\/|$)/, /^\/api\/cron\//];
 
-function safeEqual(a: string, b: string) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-function credentials(request: NextRequest): { user: string; pass: string } | null {
-  const header = request.headers.get("authorization") ?? "";
-  if (!header.startsWith("Basic ")) return null;
-  try {
-    const decoded = atob(header.slice(6));
-    const sep = decoded.indexOf(":");
-    return sep >= 0 ? { user: decoded.slice(0, sep), pass: decoded.slice(sep + 1) } : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Rôle correspondant aux identifiants, ou null s'ils sont absents ou faux. */
-export function roleFor(request: NextRequest): "admin" | "user" | null {
-  const appPass = process.env.APP_PASSWORD?.trim();
-  const adminPass = process.env.ADMIN_PASSWORD?.trim();
-  if (!appPass && !adminPass) return "admin";
-  const c = credentials(request);
-  if (!c) return null;
-  const adminUser = process.env.ADMIN_USER?.trim();
-  if (adminPass && safeEqual(c.pass, adminPass) && (!adminUser || c.user === adminUser)) return "admin";
-  const appUser = process.env.APP_USER?.trim();
-  if (appPass && safeEqual(c.pass, appPass) && (!appUser || c.user === appUser)) return adminPass ? "user" : "admin";
-  return null;
-}
-
-function withRole(request: NextRequest, role: "admin" | "user") {
+function forward(request: NextRequest) {
   const headers = new Headers(request.headers);
-  headers.set(ROLE_HEADER, role);
+  headers.set("x-pathname", request.nextUrl.pathname);
   return NextResponse.next({ request: { headers } });
 }
 
 export function proxy(request: NextRequest) {
-  if (PUBLIC_PATHS.some((re) => re.test(request.nextUrl.pathname))) return withRole(request, "user");
-  const role = roleFor(request);
-  if (role) return withRole(request, role);
-  return new NextResponse("Authentification requise", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="Prospecta", charset="UTF-8"' },
-  });
+  const { pathname, search } = request.nextUrl;
+  const writes = !["GET", "HEAD", "OPTIONS"].includes(request.method);
+
+  if (writes && pathname.startsWith("/api/") && !CROSS_ORIGIN_OK.some((re) => re.test(pathname))) {
+    const origin = request.headers.get("origin");
+    if (origin) {
+      let sameHost = false;
+      try {
+        sameHost = new URL(origin).host === (request.headers.get("x-forwarded-host") ?? request.headers.get("host"));
+      } catch {
+        /* origine invalide */
+      }
+      if (!sameHost) return NextResponse.json({ error: "Requête refusée." }, { status: 403 });
+    }
+  }
+
+  if (isPublicPath(pathname) || request.cookies.get(SESSION_COOKIE)?.value) return forward(request);
+  if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Connexion requise." }, { status: 401 });
+  const url = request.nextUrl.clone();
+  url.pathname = "/login";
+  url.search = `?next=${encodeURIComponent(pathname + search)}`;
+  return NextResponse.redirect(url);
 }
 
 export const config = {

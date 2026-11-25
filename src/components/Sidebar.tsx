@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
-import { LayoutDashboard, Plus, Settings, ShieldCheck, Target, Radar } from "lucide-react";
+import { BRAND } from "@/lib/brand";
+import { LayoutDashboard, LogOut, Plus, Settings, ShieldCheck, Target, Radar } from "lucide-react";
 
 const NAV = [
   { href: "/", label: "Tableau de bord", icon: LayoutDashboard },
@@ -12,7 +13,12 @@ const NAV = [
 ];
 const ADMIN_NAV = { href: "/admin", label: "Administration", icon: ShieldCheck };
 
-export function Sidebar({ demo, admin }: { demo: boolean; admin: boolean }) {
+async function logout() {
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+  window.location.href = "/login";
+}
+
+export function Sidebar({ demo, admin, account }: { demo: boolean; admin: boolean; account: { email: string; name: string } }) {
   const path = usePathname();
   const nav = admin ? [...NAV, ADMIN_NAV] : NAV;
   return (
@@ -22,8 +28,8 @@ export function Sidebar({ demo, admin }: { demo: boolean; admin: boolean }) {
           <Radar className="size-4.5" />
         </div>
         <div>
-          <div className="font-semibold leading-tight text-slate-900">Prospecta</div>
-          <div className="text-[11px] leading-tight text-slate-500">Agent de prospection IA</div>
+          <div className="font-semibold leading-tight text-slate-900">{BRAND.name}</div>
+          <div className="text-[11px] leading-tight text-slate-500">{BRAND.tagline}</div>
         </div>
       </div>
       <div className="px-3">
@@ -52,7 +58,7 @@ export function Sidebar({ demo, admin }: { demo: boolean; admin: boolean }) {
           })}
         </nav>
       </div>
-      <div className="mt-auto p-4">
+      <div className="mt-auto space-y-3 p-4">
         {demo ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
             <div className="font-semibold">Mode démonstration</div>
@@ -64,6 +70,15 @@ export function Sidebar({ demo, admin }: { demo: boolean; admin: boolean }) {
             Recherche en direct activée.
           </div>
         )}
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2">
+          <div className="min-w-0">
+            {account.name && <div className="truncate text-xs font-medium text-slate-800">{account.name}</div>}
+            <div className="truncate text-[11px] text-slate-500">{account.email}</div>
+          </div>
+          <button onClick={logout} className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Se déconnecter" title="Se déconnecter">
+            <LogOut className="size-4" />
+          </button>
+        </div>
       </div>
     </aside>
   );
@@ -73,7 +88,7 @@ export function MobileNav({ admin }: { admin: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 md:hidden">
       <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold">
-        <Radar className="size-5 text-brand-600" /> Prospecta
+        <Radar className="size-5 text-brand-600" /> {BRAND.name}
       </Link>
       <div className="flex items-center gap-1 text-sm">
         <Link href="/campaigns" className="rounded-md p-2 text-slate-600 hover:bg-slate-100" aria-label="Campagnes">
@@ -87,6 +102,9 @@ export function MobileNav({ admin }: { admin: boolean }) {
             <ShieldCheck className="size-4" />
           </Link>
         )}
+        <button onClick={logout} className="rounded-md p-2 text-slate-600 hover:bg-slate-100" aria-label="Se déconnecter">
+          <LogOut className="size-4" />
+        </button>
         <Link href="/campaigns/new" className="ml-1 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-brand-600 px-2.5 py-1.5 text-white">
           <Plus className="size-4" /> Nouveau
         </Link>

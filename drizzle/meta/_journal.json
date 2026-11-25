@@ -15,6 +15,13 @@
       "when": 1795578498328,
       "tag": "0001_mailboxes_and_replies",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795647549813,
+      "tag": "0002_accounts",
+      "breakpoints": true
     }
   ]
 }

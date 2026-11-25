@@ -48,7 +48,7 @@ async function chat(body: Record<string, unknown>): Promise<ChatResponse> {
           Authorization: `Bearer ${config.openrouter.apiKey}`,
           "Content-Type": "application/json",
           "HTTP-Referer": config.appUrl,
-          "X-Title": "Prospecta",
+          "X-Title": "Ciblora",
         },
         body: JSON.stringify({ ...body, usage: { include: true } }),
         signal: AbortSignal.timeout(10 * 60_000),

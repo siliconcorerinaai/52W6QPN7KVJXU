@@ -17,7 +17,7 @@ export type SiteDigest = {
 };
 
 const UA =
-  "Mozilla/5.0 (compatible; ProspectaBot/1.0; +https://github.com/) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36";
+  "Mozilla/5.0 (compatible; CibloraBot/1.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36";
 const MAX_BYTES = 1_500_000;
 
 /** Pages internes intéressantes pour la qualification et la recherche de décideurs. */

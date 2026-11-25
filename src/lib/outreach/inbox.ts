@@ -5,9 +5,10 @@
  * - Réponses automatiques (absence, congés) → ignorées : les relances continuent.
  */
 import { ImapFlow } from "imapflow";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { contacts, messages } from "@/lib/db/schema";
+import { contacts, messages, users } from "@/lib/db/schema";
+import { campaignIdsOf, PLATFORM, type Owner } from "@/lib/ownership";
 import { logEvent } from "@/lib/events";
 import { errorMessage } from "@/lib/util";
 import { listMailboxes, recordSync, type SendingMailbox } from "./mailboxes";
@@ -96,12 +97,16 @@ async function fetchRecent(mb: SendingMailbox, since: Date): Promise<InboundMess
   return out;
 }
 
-/** Applique les réponses et rebonds détectés à la base. */
-export async function applyInbound(items: InboundMessage[], ownAddresses: string[]): Promise<Omit<SyncResult, "scanned">> {
+/**
+ * Applique les réponses et rebonds détectés à la base. Avec `owner`, seuls les contacts des campagnes
+ * de ce compte sont concernés (une boîte ne touche jamais aux prospects d'un autre client).
+ */
+export async function applyInbound(items: InboundMessage[], ownAddresses: string[], owner?: Owner): Promise<Omit<SyncResult, "scanned">> {
   const db = await getDb();
   let replies = 0;
   let bounces = 0;
   const active = ["sent", "approved", "drafted"] as const;
+  const inScope = owner ? sql`${contacts.campaignId} in ${campaignIdsOf(owner)}` : sql`true`;
 
   for (const item of items) {
     const c = classifyInbound(item, ownAddresses);
@@ -113,11 +118,11 @@ export async function applyInbound(items: InboundMessage[], ownAddresses: string
         contactId = m?.contactId;
       }
       const rows = contactId
-        ? await db.select().from(contacts).where(eq(contacts.id, contactId))
+        ? await db.select().from(contacts).where(and(eq(contacts.id, contactId), inScope))
         : await db
             .select()
             .from(contacts)
-            .where(and(eq(contacts.email, item.from.toLowerCase()), inArray(contacts.status, [...active])));
+            .where(and(eq(contacts.email, item.from.toLowerCase()), inArray(contacts.status, [...active]), inScope));
       for (const ct of rows) {
         if (!["sent", "approved", "drafted"].includes(ct.status)) continue;
         await markReplied(ct.id, ct.campaignId, ct.fullName, item.subject);
@@ -127,7 +132,7 @@ export async function applyInbound(items: InboundMessage[], ownAddresses: string
       const rows = await db
         .select()
         .from(contacts)
-        .where(and(inArray(contacts.email, c.bounced), inArray(contacts.status, [...active])));
+        .where(and(inArray(contacts.email, c.bounced), inArray(contacts.status, [...active]), inScope));
       for (const ct of rows) {
         await db.update(contacts).set({ status: "bounced", emailStatus: "invalid", updatedAt: new Date() }).where(eq(contacts.id, ct.id));
         await db
@@ -157,6 +162,13 @@ async function markReplied(contactId: string, campaignId: string, name: string, 
   });
 }
 
+async function mailboxOwner(mb: SendingMailbox): Promise<Owner> {
+  if (!mb.userId) return PLATFORM;
+  const db = await getDb();
+  const [u] = await db.select({ role: users.role }).from(users).where(eq(users.id, mb.userId));
+  return { id: mb.userId, role: u?.role ?? "user" };
+}
+
 /** Synchronise toutes les boîtes ayant un accès IMAP. */
 export async function syncAllInboxes(): Promise<SyncResult & { mailboxes: number; errors: string[] }> {
   const boxes = (await listMailboxes()).filter((b) => b.imap);
@@ -167,7 +179,7 @@ export async function syncAllInboxes(): Promise<SyncResult & { mailboxes: number
       // IMAP filtre au jour près : on relit les 3 derniers jours (le traitement est idempotent)
       const since = new Date(Date.now() - 3 * 86_400_000);
       const items = await fetchRecent(mb, since);
-      const r = await applyInbound(items, own);
+      const r = await applyInbound(items, own, await mailboxOwner(mb));
       total.scanned += items.length;
       total.replies += r.replies;
       total.bounces += r.bounces;

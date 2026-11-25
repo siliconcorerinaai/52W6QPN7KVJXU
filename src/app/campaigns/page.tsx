@@ -3,11 +3,12 @@ import { Plus, Target } from "lucide-react";
 import { listCampaigns } from "@/lib/pipeline/campaigns";
 import { CampaignList } from "@/components/CampaignList";
 import { Card, EmptyState } from "@/components/ui";
+import { requireUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function CampaignsPage() {
-  const campaigns = await listCampaigns();
+  const campaigns = await listCampaigns(await requireUser());
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">

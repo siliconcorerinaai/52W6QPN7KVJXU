@@ -1,12 +1,14 @@
 import { handle, json } from "@/lib/api";
-import { isAdmin, publicStats } from "@/lib/access";
+import { publicStats } from "@/lib/access";
 import { globalStats } from "@/lib/pipeline/campaigns";
+import { requireUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   return handle(async () => {
-    const stats = await globalStats();
-    return json((await isAdmin()) ? stats : publicStats(stats));
+    const user = await requireUser();
+    const stats = await globalStats(user);
+    return json(user.role === "admin" ? stats : publicStats(stats));
   });
 }

@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { companies, contacts, type Company, type Contact } from "@/lib/db/schema";
+import { assertPublicUrl } from "@/lib/net-guard";
 
 export type LeadRow = { contact: Contact; company: Company };
 
@@ -56,9 +57,10 @@ export async function companiesToCsv(campaignId: string): Promise<string> {
 
 /** Pousse les leads (avec email) vers un webhook : n8n, Make, Zapier, CRM maison… */
 export async function pushWebhook(campaignId: string, url: string): Promise<number> {
+  await assertPublicUrl(url);
   const leads = await loadLeads(campaignId, true);
   const payload = {
-    source: "prospecta",
+    source: "ciblora",
     campaignId,
     count: leads.length,
     leads: leads.map(({ contact: c, company: co }) => ({
@@ -89,6 +91,7 @@ export async function pushWebhook(campaignId: string, url: string): Promise<numb
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    redirect: "error", // pas de redirection vers une adresse interne
     signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`Webhook HTTP ${res.status}`);

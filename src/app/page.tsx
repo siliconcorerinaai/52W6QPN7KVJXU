@@ -4,12 +4,16 @@ import { globalStats, listCampaigns } from "@/lib/pipeline/campaigns";
 import { Card, CardHeader, EmptyState, Stat } from "@/components/ui";
 import { CampaignList } from "@/components/CampaignList";
 import { HeroSearch } from "@/components/HeroSearch";
-import { isAdmin } from "@/lib/access";
+import { Landing } from "@/components/Landing";
+import { currentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
-  const [stats, campaigns, admin] = await Promise.all([globalStats(), listCampaigns(), isAdmin()]);
+  const user = await currentUser();
+  if (!user) return <Landing />;
+  const admin = user.role === "admin";
+  const [stats, campaigns] = await Promise.all([globalStats(user), listCampaigns(user)]);
   return (
     <div className="space-y-8">
       <HeroSearch />

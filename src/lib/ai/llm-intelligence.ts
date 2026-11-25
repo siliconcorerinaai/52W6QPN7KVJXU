@@ -51,7 +51,7 @@ Ta mission : transformer la description d'un client idéal (ICP), écrite en une
 précis et actionnable. Les requêtes de recherche doivent être concrètes, variées (au moins 8), dans la langue des
 marchés ciblés, et viser des pages qui listent ou décrivent des entreprises cibles. Les personas sont des intitulés
 de poste réalistes (dans la langue du marché). Écris le reste du plan en français.
-Prospecta ne prospecte que des entreprises et organisations (B2B). Si la demande vise des particuliers
+L'outil ne prospecte que des entreprises et organisations (B2B). Si la demande vise des particuliers
 (consommateurs, personnes en difficulté, etc.) ou ne permet pas d'identifier des entreprises cibles,
 mets feasible=false, explique pourquoi dans feasibilityIssue avec une suggestion de cible B2B, et laisse
 les listes vides. Sinon feasible=true et feasibilityIssue=null.`,

@@ -52,7 +52,7 @@ export type OutgoingEmail = {
 
 /** Envoie un email texte + HTML minimal, avec pied de page légal et désinscription en un clic. */
 export async function sendEmail(mail: OutgoingEmail, mailbox: SendingMailbox): Promise<{ messageId: string }> {
-  const senderAddress = await getSenderAddress();
+  const senderAddress = await getSenderAddress(mailbox.userId);
   const footerLines = [
     senderAddress,
     mail.contactId ? `Pour ne plus recevoir de messages : ${unsubscribeUrl(mail.contactId)}` : "",

@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { kickWorker } from "@/lib/jobs/kick";
 import { handle, json, type IdParams } from "@/lib/api";
-import { isAdmin, publicEventData, publicStats } from "@/lib/access";
+import { publicEventData, publicStats } from "@/lib/access";
+import { requireUser } from "@/lib/session";
 import {
   campaignEvents,
   campaignStats,
   deleteCampaign,
-  getCampaign,
+  getOwnedCampaign,
   updateCampaignConfig,
   updateCampaignStatus,
 } from "@/lib/pipeline/campaigns";
@@ -18,12 +19,12 @@ export const maxDuration = 300;
 export async function GET(req: Request, { params }: IdParams) {
   return handle(async () => {
     const { id } = await params;
-    const campaign = await getCampaign(id);
-    if (!campaign) return json({ error: "Campagne introuvable" }, 404);
+    const user = await requireUser();
+    const campaign = await getOwnedCampaign(id, user);
     const after = Number(new URL(req.url).searchParams.get("after") ?? 0);
     const [stats, events] = await Promise.all([campaignStats([id]), campaignEvents(id, after)]);
     kickWorker();
-    if (await isAdmin()) return json({ campaign, stats: stats[id], events });
+    if (user.role === "admin") return json({ campaign, stats: stats[id], events });
     return json({ campaign, stats: publicStats(stats[id]), events: events.map((e) => ({ ...e, data: publicEventData(e.data) })) });
   });
 }
@@ -38,6 +39,7 @@ const Patch = z.object({
 export async function PATCH(req: Request, { params }: IdParams) {
   return handle(async () => {
     const { id } = await params;
+    await getOwnedCampaign(id, await requireUser());
     const body = Patch.parse(await req.json());
     if (body.action) await updateCampaignStatus(id, body.action);
     if (body.name || body.offer || body.settings) await updateCampaignConfig(id, body);
@@ -49,6 +51,7 @@ export async function PATCH(req: Request, { params }: IdParams) {
 export async function DELETE(_req: Request, { params }: IdParams) {
   return handle(async () => {
     const { id } = await params;
+    await getOwnedCampaign(id, await requireUser());
     await deleteCampaign(id);
     return json({ ok: true });
   });
