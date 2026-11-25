@@ -51,3 +51,12 @@ describe("pooler Supabase", () => {
     expect(alternatePoolerUrl("postgres://u:pw@db.example.com/x")).toBeNull();
   });
 });
+
+describe("messages d'erreur Supavisor", () => {
+  it("reconnaît les deux formulations de « tenant introuvable »", () => {
+    const re = /tenant( or |\/)user.*not found/i;
+    expect(re.test("Tenant or user not found")).toBe(true);
+    expect(re.test("FATAL:  (ENOTFOUND) tenant/user prospecta_app.abc not found")).toBe(true);
+    expect(re.test("password authentication failed")).toBe(false);
+  });
+});

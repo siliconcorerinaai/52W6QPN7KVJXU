@@ -73,7 +73,8 @@ async function connectPostgres(url: string) {
     return client;
   } catch (e) {
     const alt = alternatePoolerUrl(url);
-    if (!alt || !/tenant or user not found/i.test(e instanceof Error ? e.message : String(e))) throw e;
+    // Supavisor : « Tenant or user not found » ou « (ENOTFOUND) tenant/user <rôle>.<projet> not found »
+    if (!alt || !/tenant( or |\/)user.*not found/i.test(e instanceof Error ? e.message : String(e))) throw e;
     await client.end({ timeout: 1 });
     const fallback = open(alt);
     await fallback`select 1`;
