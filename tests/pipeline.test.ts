@@ -67,3 +67,29 @@ describe("pipeline (mode démo)", () => {
     expect(after.replied).toBe(1);
   });
 });
+
+describe("garde-fous du plan", () => {
+  it("refuse de lancer une campagne dont le plan est vide (cible non B2B)", async () => {
+    const { createCampaign } = await import("@/lib/pipeline/campaigns");
+    const emptyPlan = {
+      summary: "Plan non réalisable",
+      industries: [],
+      geographies: ["France"],
+      companySize: "",
+      keywords: [],
+      personas: [],
+      signals: [],
+      exclusions: [],
+      searchQueries: [],
+      qualificationCriteria: [],
+    };
+    await expect(createCampaign({ prompt: "particuliers en détresse", plan: emptyPlan, offer: {}, settings: {} })).rejects.toThrow(/plan de ciblage est vide/);
+  });
+
+  it("le plan de démonstration est marqué réalisable", async () => {
+    const { intelligence } = await import("@/lib/ai");
+    const plan = await intelligence().plan({ prompt: "Agences web à Lyon", offer: {} as never }, {});
+    expect(plan.feasible).toBe(true);
+    expect(plan.feasibilityIssue).toBeNull();
+  });
+});

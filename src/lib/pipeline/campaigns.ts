@@ -15,6 +15,11 @@ import {
   type CampaignSettings,
 } from "@/lib/types";
 
+/** Erreur de saisie de l'utilisateur (renvoyée en 400, pas en 500). */
+export class PlanError extends Error {
+  override name = "PlanError";
+}
+
 export type CampaignStats = {
   companies: number;
   analyzed: number;
@@ -38,6 +43,10 @@ export async function createCampaign(input: {
   settings: Partial<CampaignSettings>;
 }): Promise<Campaign> {
   const db = await getDb();
+  const plan = CampaignPlanSchema.parse(input.plan);
+  if (!plan.searchQueries.some((q) => q.trim()) && !plan.industries.length && !plan.keywords.length) {
+    throw new PlanError("Le plan de ciblage est vide : décrivez des entreprises à prospecter (secteur, zone, taille…).");
+  }
   const settings = CampaignSettingsSchema.parse(input.settings);
   settings.seedDomains = settings.seedDomains.map((d) => normalizeDomain(d)).filter((d): d is string => !!d);
   const [c] = await db
@@ -47,7 +56,7 @@ export async function createCampaign(input: {
       name: input.name?.trim() || input.prompt.slice(0, 60),
       prompt: input.prompt.trim(),
       status: "running",
-      plan: CampaignPlanSchema.parse(input.plan),
+      plan,
       offer: CampaignOfferSchema.parse(input.offer),
       settings,
     })

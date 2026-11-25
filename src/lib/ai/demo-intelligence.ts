@@ -44,6 +44,8 @@ export class DemoIntelligence implements Intelligence {
     const words = prompt.split(/[\s,.;]+/).filter((w) => w.length > 4).slice(0, 6);
     return {
       campaignName: `Prospection — ${prompt.slice(0, 40)}${prompt.length > 40 ? "…" : ""}`,
+      feasible: true,
+      feasibilityIssue: null,
       summary: prompt,
       industries: words.length ? words.slice(0, 3) : ["Services B2B"],
       geographies: ["France"],

@@ -12,6 +12,7 @@ export async function handle(fn: () => Promise<Response>): Promise<Response> {
     return await fn();
   } catch (e) {
     if (e instanceof ZodError) return json({ error: "Données invalides", details: e.issues }, 400);
+    if (e instanceof Error && e.name === "PlanError") return json({ error: e.message }, 400);
     console.error("[api]", e);
     return json({ error: errorMessage(e) }, 500);
   }

@@ -3,6 +3,13 @@ import { CampaignPlanSchema } from "@/lib/types";
 
 export const PlanResponseSchema = CampaignPlanSchema.extend({
   campaignName: z.string().describe("Nom court de campagne (3 à 6 mots)"),
+  feasible: z
+    .boolean()
+    .describe("true si la demande décrit des entreprises ou organisations à prospecter (B2B), false sinon"),
+  feasibilityIssue: z
+    .string()
+    .nullable()
+    .describe("Si feasible=false : explication courte en français et suggestion de cible B2B ; sinon null"),
 });
 export type PlanResponse = z.infer<typeof PlanResponseSchema>;
 
