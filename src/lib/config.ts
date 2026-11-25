@@ -119,6 +119,19 @@ export const config = {
   },
 };
 
+/**
+ * Hébergement serverless (Vercel, Lambda…) : pas de worker permanent ni de disque inscriptible.
+ * Détection indépendante des variables système de Vercel, qui ne sont pas toujours exposées.
+ */
+export function isServerless(): boolean {
+  if (process.env.SERVERLESS === "true") return true;
+  if (process.env.SERVERLESS === "false") return false;
+  return (
+    Boolean(process.env.VERCEL || process.env.VERCEL_ENV || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT) ||
+    process.cwd().startsWith("/var/task")
+  );
+}
+
 export type ProviderStatus = { id: string; label: string; enabled: boolean; detail: string };
 
 export function providerStatus(): ProviderStatus[] {

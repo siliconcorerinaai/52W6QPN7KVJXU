@@ -2,6 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
+import { isServerless } from "../config";
 
 export type DB = PgDatabase<PgQueryResultHKT, typeof schema>;
 
@@ -98,7 +99,7 @@ async function create(): Promise<DbState> {
   const { drizzle } = await import("drizzle-orm/pglite");
   const { migrate } = await import("drizzle-orm/pglite/migrator");
   // Sur Vercel le disque est en lecture seule : base de démonstration éphémère dans /tmp
-  const dataDir = process.env.PGLITE_DIR ?? (process.env.VERCEL ? "/tmp/prospecta-pglite" : path.join(process.cwd(), "data", "pglite"));
+  const dataDir = process.env.PGLITE_DIR ?? (isServerless() ? "/tmp/prospecta-pglite" : path.join(process.cwd(), "data", "pglite"));
   const inMemory = dataDir === "memory://";
   if (!inMemory) fs.mkdirSync(dataDir, { recursive: true });
   const client = new PGlite(inMemory ? undefined : dataDir);

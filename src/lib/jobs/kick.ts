@@ -1,10 +1,8 @@
 import { after } from "next/server";
+import { isServerless } from "@/lib/config";
 import { tick } from "./worker";
 
 const g = globalThis as unknown as { __prospectaKick?: boolean };
-
-/** Hébergement serverless (Vercel…) : pas de worker permanent, la file avance pendant les requêtes et le cron. */
-export const isServerless = () => Boolean(process.env.VERCEL) || process.env.SERVERLESS === "true";
 
 /**
  * Fait avancer la file après la réponse HTTP (serverless uniquement).
