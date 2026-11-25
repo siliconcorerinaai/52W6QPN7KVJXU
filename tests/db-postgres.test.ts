@@ -60,4 +60,18 @@ describe.skipIf(!url)("Postgres : connexion coupée en silence", () => {
     expect(fresh).not.toBe(db);
     expect((res as unknown as { n: number }[])[0].n).toBe(2);
   });
+
+  it("traite plus de requêtes simultanées que de connexions (une requête à la fois par connexion)", async () => {
+    const { getDb } = await import("@/lib/db");
+    const db = await getDb();
+    const started = Date.now();
+    const rows = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => db.execute(sql`select ${i}::int as i, pg_backend_pid() as pid, pg_sleep(0.2)`)),
+    );
+    const out = rows.map((r) => (r as unknown as { i: number; pid: number }[])[0]);
+    expect(out.map((r) => r.i)).toEqual([0, 1, 2, 3, 4, 5]);
+    // Pool de 2 connexions : les requêtes attendent une connexion libre, en 3 vagues de 200 ms au moins.
+    expect(Date.now() - started).toBeGreaterThanOrEqual(550);
+    expect(new Set(out.map((r) => r.pid)).size).toBeLessThanOrEqual(2);
+  });
 });

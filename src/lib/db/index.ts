@@ -83,6 +83,11 @@ async function connectPostgres(url: string) {
       // (instance serverless suspendue, pooler qui ferme) ne bloque pas les requêtes indéfiniment.
       max_lifetime: 5 * 60,
       connect_timeout: 10,
+      // Une requête à la fois par connexion : enchaînées (pipeline), deux requêtes simultanées
+      // pouvaient rester sans réponse derrière le pooler Supabase (Supavisor, mode transaction).
+      max_pipeline: 1,
+      // Filet de sécurité côté client : une requête sans réponse est annulée au lieu d'attendre indéfiniment.
+      query_timeout: 45,
       prepare: false, // compatible avec le pooler Supabase (Supavisor)
       ssl: sslFor(u),
       onnotice: () => {},
