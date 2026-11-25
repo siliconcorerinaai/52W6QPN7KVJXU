@@ -3,40 +3,69 @@ import { claimJob, completeJob, failJob, recoverStaleJobs } from "./queue";
 import { runJob } from "@/lib/pipeline/handlers";
 import { maybeScheduleInboxSync } from "./schedule";
 import { logEvent } from "@/lib/events";
-import { errorMessage, sleep } from "@/lib/util";
+import { errorMessage, sleep, TimeoutError, withTimeout } from "@/lib/util";
 import { config, isServerless } from "@/lib/config";
+import { resetDb } from "@/lib/db";
 import type { Job } from "@/lib/db/schema";
 
 const workerId = `${hostname()}-${process.pid}`;
 
 /**
- * Durée maximale d'une tâche. En serverless, la fonction est coupée à 300 s : au-delà de 240 s
- * on abandonne proprement (la tâche est retentée) plutôt que de la laisser « en cours » à jamais.
+ * Durée maximale d'une tâche. En serverless, la fonction est coupée à 300 s : la file prend de
+ * nouvelles tâches pendant 60 s au plus, et une tâche est abandonnée (puis retentée) au-delà de 200 s.
  */
-const JOB_TIMEOUT_MS = () => (isServerless() ? 240_000 : 15 * 60_000);
+const JOB_TIMEOUT_MS = () => (isServerless() ? 200_000 : 15 * 60_000);
 /** Une tâche « en cours » depuis plus longtemps est considérée comme orpheline et remise en file. */
 export const STALE_MINUTES = () => (isServerless() ? 6 : 20);
+/** Durée maximale d'une opération de file (réserver, clôturer…) : ce sont de petites requêtes. */
+const DB_STEP_MS = 20_000;
 
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Délai dépassé (${Math.round(ms / 1000)} s) pour ${label}`)), ms);
-  });
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+/**
+ * Borne une opération de base. Si elle ne répond pas, le pool de connexions est recréé :
+ * sans cela, une connexion morte bloquerait toutes les requêtes suivantes de l'instance.
+ */
+async function dbStep<T>(p: Promise<T>, label: string): Promise<T> {
+  try {
+    return await withTimeout(p, DB_STEP_MS, label);
+  } catch (e) {
+    if (e instanceof TimeoutError) await resetDb(`${label} sans réponse`);
+    throw e;
+  }
 }
 
+/** Exécute un job et enregistre son issue. Ne lève jamais d'exception. */
 async function processOne(job: Job) {
   const started = Date.now();
   console.log(`[worker] ▶ job ${job.id} ${job.type} (tentative ${job.attempts})`);
+  let error: unknown = null;
   try {
     await withTimeout(runJob(job), JOB_TIMEOUT_MS(), job.type);
-    await completeJob(job.id);
-    console.log(`[worker] ✓ job ${job.id} ${job.type} en ${Date.now() - started} ms`);
   } catch (e) {
-    const msg = errorMessage(e);
-    const final = await failJob(job, msg);
+    error = e;
+  }
+  try {
+    if (error === null) {
+      await dbStep(completeJob(job.id), "la clôture du job");
+      console.log(`[worker] ✓ job ${job.id} ${job.type} en ${Date.now() - started} ms`);
+      return;
+    }
+    const msg = errorMessage(error);
+    const final = await dbStep(failJob(job, msg), "l'enregistrement de l'échec");
     console.error(`[worker] ✗ job ${job.id} (${job.type}) a échoué${final ? " définitivement" : ""} : ${msg}`);
     if (final) await logEvent(job.campaignId, "error", job.type, `Échec définitif : ${msg}`, { jobId: job.id });
+  } catch (e) {
+    // Base injoignable : le job reste « en cours » et sera remis en file par recoverStaleJobs.
+    console.error(`[worker] job ${job.id} (${job.type}) : issue non enregistrée — ${errorMessage(e)}`);
+  }
+}
+
+/** Réserve le prochain job ; null si la file est vide ou si la base ne répond pas. */
+async function claimNext(): Promise<Job | null> {
+  try {
+    return await dbStep(claimJob(workerId), "la réservation d'un job");
+  } catch (e) {
+    console.error("[worker] réservation impossible :", errorMessage(e));
+    return null;
   }
 }
 
@@ -44,11 +73,11 @@ async function processOne(job: Job) {
 export async function tick({ maxJobs = 50, deadlineMs = 50_000, concurrency = config.worker.concurrency } = {}) {
   const deadline = Date.now() + deadlineMs;
   let processed = 0;
-  await recoverStaleJobs(STALE_MINUTES());
-  await maybeScheduleInboxSync();
+  await dbStep(recoverStaleJobs(STALE_MINUTES()), "la récupération des jobs orphelins");
+  await dbStep(maybeScheduleInboxSync(), "la planification de la lecture des boîtes");
   const lanes = Array.from({ length: concurrency }, async () => {
     while (processed < maxJobs && Date.now() < deadline) {
-      const job = await claimJob(workerId);
+      const job = await claimNext();
       if (!job) return;
       processed++;
       await processOne(job);
@@ -76,14 +105,9 @@ export function startWorker({ concurrency = config.worker.concurrency, idleMs = 
     console.log(`[worker] démarré (${concurrency} voies, id=${workerId})`);
     const lane = async () => {
       while (state.running) {
-        let job: Job | null = null;
-        try {
-          job = await claimJob(workerId);
-        } catch (e) {
-          console.error("[worker] claim", errorMessage(e));
-        }
+        const job = await claimNext();
         if (!job) {
-          await maybeScheduleInboxSync();
+          await dbStep(maybeScheduleInboxSync(), "la planification de la lecture des boîtes").catch(() => {});
           await sleep(idleMs + Math.random() * 500);
           continue;
         }

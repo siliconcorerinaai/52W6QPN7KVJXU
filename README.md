@@ -159,6 +159,16 @@ $$);
 
 Variables Vercel : `DATABASE_URL` (Supabase, **Transaction pooler**, port 6543), `APP_PASSWORD`, `CRON_SECRET`, `UNSUBSCRIBE_SECRET`, `APP_URL`, la clé IA, et les variables SMTP pour l'envoi.
 
+Limites conseillées pour le rôle Postgres de l'application : une requête ou une transaction abandonnée ne doit jamais bloquer la file longtemps.
+
+```sql
+alter role <rôle_de_l_app> set statement_timeout = '60s';
+alter role <rôle_de_l_app> set lock_timeout = '20s';
+alter role <rôle_de_l_app> set idle_in_transaction_session_timeout = '60s';
+```
+
+Entre deux requêtes, Vercel peut suspendre l'instance et une connexion peut mourir sans prévenir. L'application vérifie donc la connexion après 30 s d'inactivité (`DB_IDLE_CHECK_MS`), et recrée le pool si elle ne répond pas en 5 s. Chaque opération de la file est par ailleurs limitée à 20 s.
+
 ## Coûts
 
 Le coût IA estimé (tokens + recherches web) s'affiche pour chaque campagne et sur le tableau de bord. Pour le réduire :
@@ -183,6 +193,8 @@ Prospecta est conçu pour une prospection B2B ciblée et respectueuse. Il ne rem
 ```bash
 npm test          # unitaires + pipeline complet en mode démo + fournisseurs IA simulés
 npm run typecheck
+# connexion coupée en silence, sur un vrai PostgreSQL :
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/test npm test -- tests/db-postgres.test.ts
 ```
 
 Les tests des fournisseurs IA utilisent de faux serveurs (flux SSE pour Claude, JSON pour OpenRouter) : aucun appel réel, aucun coût.
