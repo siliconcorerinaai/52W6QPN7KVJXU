@@ -40,3 +40,14 @@ describe("noms", () => {
     expect(slugifyName("Lætitia")).toBe("laetitia");
   });
 });
+
+describe("pooler Supabase", () => {
+  it("bascule entre les grappes aws-0 et aws-1", async () => {
+    const { alternatePoolerUrl } = await import("@/lib/db");
+    expect(alternatePoolerUrl("postgresql://u.ref:pw@aws-1-us-east-1.pooler.supabase.com:6543/postgres")).toBe(
+      "postgresql://u.ref:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres",
+    );
+    expect(alternatePoolerUrl("postgresql://u:pw@aws-0-eu-west-3.pooler.supabase.com:5432/postgres")).toContain("aws-1-eu-west-3");
+    expect(alternatePoolerUrl("postgres://u:pw@db.example.com/x")).toBeNull();
+  });
+});

@@ -45,21 +45,50 @@ function sslFor(url: string): "require" | false {
   return "require";
 }
 
+/**
+ * Le pooler partagé de Supabase existe en deux grappes par région (aws-0-… et aws-1-…).
+ * Si la mauvaise est configurée, Supavisor répond « Tenant or user not found » : on essaie l'autre.
+ */
+export function alternatePoolerUrl(url: string): string | null {
+  const m = url.match(/aws-(\d+)-([a-z0-9-]+)\.pooler\.supabase\.com/);
+  if (!m) return null;
+  const other = m[1] === "0" ? "1" : "0";
+  return url.replace(`aws-${m[1]}-${m[2]}.pooler`, `aws-${other}-${m[2]}.pooler`);
+}
+
+async function connectPostgres(url: string) {
+  const { default: postgres } = await import("postgres");
+  const open = (u: string) =>
+    postgres(u, {
+      max: Number(process.env.DB_POOL_SIZE ?? 6),
+      idle_timeout: 20,
+      prepare: false, // compatible avec le pooler Supabase (Supavisor)
+      ssl: sslFor(u),
+      onnotice: () => {},
+    });
+  const client = open(url);
+  try {
+    await client`select 1`;
+    return client;
+  } catch (e) {
+    const alt = alternatePoolerUrl(url);
+    if (!alt || !/tenant or user not found/i.test(e instanceof Error ? e.message : String(e))) throw e;
+    await client.end({ timeout: 1 });
+    const fallback = open(alt);
+    await fallback`select 1`;
+    console.warn(`[db] DATABASE_URL : utilisez le pooler ${new URL(alt).hostname} (l'autre grappe ne connaît pas ce projet).`);
+    return fallback;
+  }
+}
+
 async function create(): Promise<DbState> {
   const migrationsFolder = path.join(process.cwd(), "drizzle");
   const url = databaseUrl();
 
   if (url) {
-    const { default: postgres } = await import("postgres");
     const { drizzle } = await import("drizzle-orm/postgres-js");
     const { migrate } = await import("drizzle-orm/postgres-js/migrator");
-    const client = postgres(url, {
-      max: Number(process.env.DB_POOL_SIZE ?? 6),
-      idle_timeout: 20,
-      prepare: false, // compatible avec le pooler Supabase (Supavisor)
-      ssl: sslFor(url),
-      onnotice: () => {},
-    });
+    const client = await connectPostgres(url);
     const db = drizzle(client, { schema, casing: "snake_case" });
     const ready = migrateWithRetry(() => migrate(db, { migrationsFolder, ...MIGRATIONS }));
     return { db: db as unknown as DB, ready, driver: "postgres" };
@@ -68,7 +97,8 @@ async function create(): Promise<DbState> {
   const { PGlite } = await import("@electric-sql/pglite");
   const { drizzle } = await import("drizzle-orm/pglite");
   const { migrate } = await import("drizzle-orm/pglite/migrator");
-  const dataDir = process.env.PGLITE_DIR ?? path.join(process.cwd(), "data", "pglite");
+  // Sur Vercel le disque est en lecture seule : base de démonstration éphémère dans /tmp
+  const dataDir = process.env.PGLITE_DIR ?? (process.env.VERCEL ? "/tmp/prospecta-pglite" : path.join(process.cwd(), "data", "pglite"));
   const inMemory = dataDir === "memory://";
   if (!inMemory) fs.mkdirSync(dataDir, { recursive: true });
   const client = new PGlite(inMemory ? undefined : dataDir);
@@ -79,11 +109,17 @@ async function create(): Promise<DbState> {
 
 let pending: Promise<DbState> | undefined;
 
+
 /** Renvoie la base prête à l'emploi (migrations appliquées). Singleton par process. */
 export async function getDb(): Promise<DB> {
   if (!globalForDb.__prospectaDb) {
     pending ??= create().then((s) => (globalForDb.__prospectaDb = s));
-    await pending;
+    try {
+      await pending;
+    } catch (e) {
+      pending = undefined;
+      throw e;
+    }
   }
   const state = globalForDb.__prospectaDb!;
   try {
