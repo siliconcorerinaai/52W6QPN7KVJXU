@@ -3,10 +3,26 @@ import fs from "node:fs";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 import { isServerless } from "../config";
+import { errorMessage, withTimeout } from "../util";
 
 export type DB = PgDatabase<PgQueryResultHKT, typeof schema>;
 
-type DbState = { db: DB; ready: Promise<void>; driver: "pglite" | "postgres" };
+type DbState = {
+  db: DB;
+  ready: Promise<void>;
+  driver: "pglite" | "postgres";
+  /** Postgres : vérifie qu'une connexion répond. */
+  ping?: () => Promise<unknown>;
+  /** Postgres : ferme immédiatement toutes les connexions du pool. */
+  close?: () => Promise<void>;
+  lastUsed: number;
+  checking?: Promise<boolean>;
+};
+
+/** Au-delà de cette inactivité, l'instance a pu être suspendue : on vérifie la connexion avant usage. */
+const idleCheckMs = () => Number(process.env.DB_IDLE_CHECK_MS ?? 30_000);
+const PING_TIMEOUT_MS = 5_000;
+const READY_TIMEOUT_MS = 60_000;
 
 const globalForDb = globalThis as unknown as { __prospectaDb?: DbState };
 
@@ -63,6 +79,10 @@ async function connectPostgres(url: string) {
     postgres(u, {
       max: Number(process.env.DB_POOL_SIZE ?? 6),
       idle_timeout: 20,
+      // Connexions recyclées régulièrement et ouverture bornée : une connexion coupée en silence
+      // (instance serverless suspendue, pooler qui ferme) ne bloque pas les requêtes indéfiniment.
+      max_lifetime: 5 * 60,
+      connect_timeout: 10,
       prepare: false, // compatible avec le pooler Supabase (Supavisor)
       ssl: sslFor(u),
       onnotice: () => {},
@@ -93,7 +113,14 @@ async function create(): Promise<DbState> {
     const client = await connectPostgres(url);
     const db = drizzle(client, { schema, casing: "snake_case" });
     const ready = migrateWithRetry(() => migrate(db, { migrationsFolder, ...MIGRATIONS }));
-    return { db: db as unknown as DB, ready, driver: "postgres" };
+    return {
+      db: db as unknown as DB,
+      ready,
+      driver: "postgres",
+      ping: () => client`select 1`,
+      close: () => client.end({ timeout: 0 }),
+      lastUsed: Date.now(),
+    };
   }
 
   const { PGlite } = await import("@electric-sql/pglite");
@@ -106,11 +133,23 @@ async function create(): Promise<DbState> {
   const client = new PGlite(inMemory ? undefined : dataDir);
   const db = drizzle(client, { schema, casing: "snake_case" });
   const ready = migrate(db, { migrationsFolder, ...MIGRATIONS });
-  return { db: db as unknown as DB, ready, driver: "pglite" };
+  return { db: db as unknown as DB, ready, driver: "pglite", lastUsed: Date.now() };
 }
 
 let pending: Promise<DbState> | undefined;
 
+
+/**
+ * Abandonne le pool de connexions courant (fermé sans attendre) ; le prochain getDb() en recrée un.
+ * Sans effet si `state` n'est plus le pool courant (un autre appel l'a déjà remplacé).
+ */
+export async function resetDb(reason: string, state = globalForDb.__prospectaDb) {
+  if (!state || globalForDb.__prospectaDb !== state) return;
+  globalForDb.__prospectaDb = undefined;
+  pending = undefined;
+  console.warn(`[db] connexions recréées : ${reason}`);
+  if (state.close) await withTimeout(state.close(), 2_000, "la fermeture du pool").catch(() => {});
+}
 
 /** Renvoie la base prête à l'emploi (migrations appliquées). Singleton par process. */
 export async function getDb(): Promise<DB> {
@@ -125,15 +164,33 @@ export async function getDb(): Promise<DB> {
   }
   const state = globalForDb.__prospectaDb!;
   try {
-    await state.ready;
+    await withTimeout(state.ready, READY_TIMEOUT_MS, "l'initialisation de la base");
   } catch (e) {
     // Échec (base injoignable, migration en conflit…) : la prochaine requête retentera
-    if (globalForDb.__prospectaDb === state) {
-      globalForDb.__prospectaDb = undefined;
-      pending = undefined;
-    }
+    await resetDb(`initialisation impossible (${errorMessage(e)})`, state);
     throw e;
   }
+
+  // Après une inactivité (instance serverless suspendue entre deux requêtes), une connexion peut être
+  // morte sans que le pilote le sache : une requête dessus attendrait jusqu'à la coupure de la fonction.
+  if (state.ping && Date.now() - state.lastUsed > idleCheckMs()) {
+    state.checking ??= withTimeout(state.ping(), PING_TIMEOUT_MS, "la vérification de la connexion")
+      .then(
+        () => true,
+        (e) => {
+          console.warn("[db] connexion inutilisable :", errorMessage(e));
+          return false;
+        },
+      )
+      .finally(() => {
+        state.checking = undefined;
+      });
+    if (!(await state.checking)) {
+      await resetDb("connexion inactive coupée", state);
+      return getDb();
+    }
+  }
+  state.lastUsed = Date.now();
   return state.db;
 }
 

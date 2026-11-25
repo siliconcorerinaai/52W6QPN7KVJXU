@@ -4,6 +4,23 @@ export const newId = () => randomUUID();
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Délai dépassé (distinct des autres erreurs pour pouvoir réagir, ex. recréer les connexions). */
+export class TimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TimeoutError";
+  }
+}
+
+/** Rejette avec une TimeoutError si `p` n'est pas résolue en `ms` millisecondes. */
+export function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new TimeoutError(`Délai dépassé (${Math.round(ms / 1000)} s) pour ${label}`)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
+
 /** Normalise un domaine : "https://www.Acme.fr/contact" → "acme.fr". Renvoie null si invalide. */
 export function normalizeDomain(input: string | null | undefined): string | null {
   if (!input) return null;
