@@ -8,6 +8,7 @@ import { config } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { appState, mailboxes, messages, type Mailbox } from "@/lib/db/schema";
 import { decryptSecret } from "@/lib/crypto";
+import { canAccess, type Owner } from "@/lib/ownership";
 
 export const ENV_MAILBOX_ID = "env";
 
@@ -15,6 +16,8 @@ export type ServerConfig = { host: string; port: number; secure: boolean; user: 
 
 export type SendingMailbox = {
   id: string;
+  /** Compte propriétaire ; null = boîte de la plateforme (administrateurs). */
+  userId: string | null;
   source: "env" | "db";
   label: string;
   fromName: string;
@@ -31,6 +34,7 @@ function envMailbox(): SendingMailbox | null {
   if (!config.smtp.configured) return null;
   return {
     id: ENV_MAILBOX_ID,
+    userId: null,
     source: "env",
     label: "Boîte par défaut",
     fromName: config.smtp.senderName,
@@ -50,6 +54,7 @@ export function toSendingMailbox(row: Mailbox): SendingMailbox {
   const pass = decryptSecret(row.smtpPassEnc);
   return {
     id: row.id,
+    userId: row.userId,
     source: "db",
     label: row.label,
     fromName: row.fromName,
@@ -63,18 +68,22 @@ export function toSendingMailbox(row: Mailbox): SendingMailbox {
   };
 }
 
-/** Toutes les boîtes utilisables (mots de passe déchiffrés). Les boîtes indéchiffrables sont ignorées. */
-export async function listMailboxes({ includeDisabled = false } = {}): Promise<SendingMailbox[]> {
+/**
+ * Boîtes utilisables (mots de passe déchiffrés), limitées à celles du compte `owner` s'il est donné
+ * (sans `owner` : toutes, pour la lecture des réponses par le worker). Les boîtes indéchiffrables sont ignorées.
+ */
+export async function listMailboxes({ includeDisabled = false, owner }: { includeDisabled?: boolean; owner?: Owner } = {}): Promise<SendingMailbox[]> {
   const db = await getDb();
   const out: SendingMailbox[] = [];
   const env = envMailbox();
-  if (env) {
+  if (env && (!owner || owner.role === "admin")) {
     const [state] = await db.select().from(appState).where(eq(appState.key, `mailbox:${ENV_MAILBOX_ID}`));
     const v = (state?.value ?? {}) as { lastSyncAt?: string; lastError?: string | null };
     out.push({ ...env, lastSyncAt: v.lastSyncAt ? new Date(v.lastSyncAt) : null, lastError: v.lastError ?? null });
   }
   for (const row of await db.select().from(mailboxes).orderBy(mailboxes.createdAt)) {
     if (!includeDisabled && !row.enabled) continue;
+    if (owner && !canAccess(row.userId, owner)) continue;
     try {
       out.push(toSendingMailbox(row));
     } catch (e) {
@@ -106,8 +115,8 @@ export async function sentTodayByMailbox(): Promise<Map<string, number>> {
  * si elle a atteint sa limite, on attend demain plutôt que de casser le fil.
  * Renvoie `null` si aucune boîte n'a de capacité aujourd'hui, et lève une erreur s'il n'y a aucune boîte.
  */
-export async function pickMailbox(preferredId?: string | null): Promise<SendingMailbox | null> {
-  const boxes = (await listMailboxes()).filter((b) => b.enabled);
+export async function pickMailbox(owner: Owner, preferredId?: string | null): Promise<SendingMailbox | null> {
+  const boxes = (await listMailboxes({ owner })).filter((b) => b.enabled);
   if (!boxes.length) throw new NoMailboxError("Aucune boîte d'envoi configurée (Paramètres → Boîtes d'envoi).");
   const sent = await sentTodayByMailbox();
   const remaining = (b: SendingMailbox) => b.dailyLimit - (sent.get(b.id) ?? 0);
@@ -127,8 +136,8 @@ export class NoMailboxError extends Error {
   override name = "NoMailboxError";
 }
 
-export async function getMailbox(id: string): Promise<SendingMailbox | null> {
-  return (await listMailboxes({ includeDisabled: true })).find((b) => b.id === id) ?? null;
+export async function getMailbox(id: string, owner: Owner): Promise<SendingMailbox | null> {
+  return (await listMailboxes({ includeDisabled: true, owner })).find((b) => b.id === id) ?? null;
 }
 
 /** Enregistre l'état de synchronisation IMAP d'une boîte. */

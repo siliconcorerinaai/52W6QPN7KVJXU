@@ -23,7 +23,7 @@ describe("pipeline (mode démo)", () => {
     const { campaignName, ...plan } = await intelligence().plan({ prompt, offer: {} as never }, {});
     expect(campaignName).toBeTruthy();
 
-    const c = await createCampaign({ prompt, plan, offer: { senderName: "Camille" }, settings: { targetCompanies: 4, contactsPerCompany: 1 } });
+    const c = await createCampaign({ userId: null, prompt, plan, offer: { senderName: "Camille" }, settings: { targetCompanies: 4, contactsPerCompany: 1 } });
 
     for (let i = 0; i < 120; i++) {
       await tick({ concurrency: 6, deadlineMs: 5000 });
@@ -83,7 +83,7 @@ describe("garde-fous du plan", () => {
       searchQueries: [],
       qualificationCriteria: [],
     };
-    await expect(createCampaign({ prompt: "particuliers en détresse", plan: emptyPlan, offer: {}, settings: {} })).rejects.toThrow(/plan de ciblage est vide/);
+    await expect(createCampaign({ userId: null, prompt: "particuliers en détresse", plan: emptyPlan, offer: {}, settings: {} })).rejects.toThrow(/plan de ciblage est vide/);
   });
 
   it("le plan de démonstration est marqué réalisable", async () => {

@@ -1,6 +1,6 @@
-# Prospecta — agent de prospection B2B propulsé par l'IA
+# Ciblora — agent de prospection B2B propulsé par l'IA
 
-Décrivez votre client idéal **en une phrase**. Prospecta s'occupe du reste :
+Décrivez votre client idéal **en une phrase**. Ciblora s'occupe du reste :
 
 1. **Plan de ciblage** : l'IA transforme votre phrase en ICP structuré (secteurs, zones, taille, décideurs, signaux d'achat, exclusions, requêtes de recherche), que vous pouvez ajuster.
 2. **Découverte** : les bases de données B2B (Apollo.io, People Data Labs) si elles sont configurées, puis un agent qui fait de la recherche web en direct (au-delà de LinkedIn), par tours successifs et sous des angles variés, jusqu'à atteindre l'objectif.
@@ -27,7 +27,7 @@ cp .env.example .env.local   # puis renseignez ANTHROPIC_API_KEY ou OPENROUTER_A
 npm run dev                  # http://localhost:3000
 ```
 
-Aucune base de données à installer : Prospecta embarque un PostgreSQL (PGlite) stocké dans `./data/pglite`. Les migrations s'appliquent au démarrage et le worker de tâches tourne dans le serveur.
+Aucune base de données à installer : Ciblora embarque un PostgreSQL (PGlite) stocké dans `./data/pglite`. Les migrations s'appliquent au démarrage et le worker de tâches tourne dans le serveur.
 
 En production : `npm run build && npm start`.
 
@@ -52,7 +52,8 @@ Toutes les options sont décrites dans [`.env.example`](.env.example). Les princ
 | `SMTP_VERIFY` | Vérification des boîtes par dialogue SMTP (`RCPT TO`). Nécessite le port 25 sortant, souvent bloqué chez les hébergeurs cloud. |
 | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SENDER_EMAIL`, `SENDER_NAME` | Envoi des emails. |
 | `SENDER_ADDRESS` | Adresse postale affichée en pied d'email, si elle n'est pas renseignée dans Paramètres. |
-| `APP_PASSWORD` / `ADMIN_PASSWORD` | Accès des utilisateurs et accès du propriétaire (voir « Utilisateurs et administration »). |
+| `ADMIN_EMAILS` | Adresses (séparées par des virgules) dont le compte est administrateur, en plus du premier compte créé. |
+| `DEFAULT_MONTHLY_COMPANY_LIMIT` | Entreprises analysées par mois pour un nouveau compte client (50 par défaut, modifiable par compte dans Administration). |
 | `DAILY_SEND_LIMIT` | Plafond d'envois par jour (40 par défaut). |
 | `APP_URL` | URL publique, utilisée pour les liens de désinscription. |
 
@@ -60,27 +61,31 @@ Les appels à Claude activent le **repli côté serveur** (`fallbacks: "default"
 
 **Anthropic ou OpenRouter ?** Avec Anthropic, Claude enchaîne lui-même plusieurs recherches web et affine ses requêtes : c'est le mode le plus précis. Avec OpenRouter, chaque étape fait une recherche web (plugin `web`) dont les résultats sont fournis au modèle choisi : plus simple, un peu moins exhaustif. Les deux produisent des sorties JSON validées.
 
-## Utilisateurs et administration
+## Comptes clients et administration
 
-L'application est faite pour être utilisée par d'autres personnes, à qui elle ne montre aucun détail technique.
+Ciblora est un produit en libre-service : chaque client crée son compte (`/signup`) et ne voit que ses propres données.
 
-- **Utilisateurs** (`APP_PASSWORD`) : campagnes, leads, boîtes d'envoi, adresse de l'expéditeur, liste d'exclusion. Ils ne voient pas :
-  - les fournisseurs (IA, bases de données, moteurs de recherche, vérification) ;
-  - les coûts ;
-  - les variables de configuration ;
-  - les erreurs techniques, remplacées par un message générique.
-- **Administrateur** (`ADMIN_PASSWORD`, en option `ADMIN_USER`) : tout ce que voient les utilisateurs, plus :
-  - la page **Administration** : fournisseurs, test des clés, infrastructure ;
-  - les coûts IA ;
-  - le détail technique des étapes en échec dans le fil d'activité.
+- **Comptes** :
+  - mots de passe hachés avec scrypt ;
+  - sessions en cookie `httpOnly` / `SameSite=Lax`, dont seule l'empreinte est stockée en base ;
+  - frein après 10 échecs de connexion, et au plus 5 inscriptions par heure et par adresse IP ;
+  - les requêtes qui modifient des données doivent venir du site lui-même.
+- **Isolation** : chaque campagne, boîte d'envoi, liste d'exclusion et adresse d'expéditeur appartient à un compte. Toutes les routes vérifient la propriété : une ressource d'un autre compte répond « introuvable ». Le worker n'envoie qu'avec les boîtes du propriétaire de la campagne, et une réponse reçue ne touche que les prospects de ce compte.
+- **Quota** : nombre d'entreprises analysées par mois et par compte (50 par défaut). Une fois la limite atteinte, la campagne se met en pause.
+- **Administrateur** : le premier compte créé, et les adresses listées dans `ADMIN_EMAILS`. Il dispose de la page **Administration** :
+  - comptes et usage du mois, limite modifiable, désactivation d'un compte ;
+  - fournisseurs et test des clés ;
+  - infrastructure.
 
-Sans `ADMIN_PASSWORD`, `APP_PASSWORD` donne l'accès administrateur. Le rôle est fixé côté serveur, dans `src/proxy.ts`, à partir du mot de passe saisi : le navigateur ne peut pas l'imposer. La sonde publique `/api/health` ne renvoie que `{"ok": true}`.
+  Il voit aussi les coûts IA et le détail technique des erreurs.
+- **Ce que les clients ne voient jamais** : fournisseurs (IA, bases de données, moteurs de recherche, vérification), coûts, variables de configuration, erreurs techniques (remplacées par un message générique). La sonde publique `/api/health` ne renvoie que `{"ok": true}`.
+- Les serveurs SMTP/IMAP et les webhooks saisis par les clients ne peuvent pas pointer vers une adresse interne (localhost, réseau privé, métadonnées du cloud). Les ports SMTP/IMAP sont limités aux ports de messagerie.
 
 ## Boîtes d'envoi et réponses
 
 Dans **Paramètres → Boîtes d'envoi**, ajoutez autant de boîtes que nécessaire (préréglages Google Workspace, Microsoft 365, Zoho, OVHcloud). Chaque boîte est testée avant d'être enregistrée, son mot de passe est chiffré, et elle a sa propre limite quotidienne. Chaque nouvelle séquence part de la boîte la moins chargée ; ses relances partent de la même boîte, en réponse au premier email.
 
-Avec un accès IMAP, Prospecta lit les boîtes de réception toutes les 5 minutes (tant que des réponses sont attendues) :
+Avec un accès IMAP, Ciblora lit les boîtes de réception toutes les 5 minutes (tant que des réponses sont attendues) :
 - une **réponse** d'un prospect le marque « a répondu » et arrête ses relances ;
 - un **rebond** (rapport de non-remise) marque l'adresse invalide ;
 - les **réponses automatiques** (absence, congés) sont ignorées.
@@ -139,7 +144,7 @@ Railway fait tourner l'application en continu : l'interface et le worker de l'ag
    - `DATABASE_URL` : la chaîne Supabase de l'étape 1 ;
    - `ANTHROPIC_API_KEY` **ou** `OPENROUTER_API_KEY` ;
    - `UNSUBSCRIBE_SECRET` : une longue chaîne aléatoire ;
-   - `APP_PASSWORD` : le mot de passe d'accès à l'application (sans lui, elle est ouverte à quiconque connaît son adresse) ;
+   - créez ensuite votre compte sur l'application : le premier compte créé est administrateur (ou listez votre adresse dans `ADMIN_EMAILS`) ;
    - `APP_URL` : l'URL publique du service (après l'étape 4).
    Puis, pour envoyer des emails : `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SENDER_EMAIL`, `SENDER_NAME`, `SENDER_ADDRESS`.
 4. **Settings → Networking → Generate Domain**, reportez l'URL dans `APP_URL`, puis redéployez.
@@ -174,7 +179,7 @@ select cron.schedule('prospecta-tick', '* * * * *', $$
 $$);
 ```
 
-Variables Vercel : `DATABASE_URL` (Supabase, **Transaction pooler**, port 6543), `APP_PASSWORD`, `CRON_SECRET`, `UNSUBSCRIBE_SECRET`, `APP_URL`, la clé IA, et les variables SMTP pour l'envoi.
+Variables Vercel : `DATABASE_URL` (Supabase, **Transaction pooler**, port 6543), `ADMIN_EMAILS` (conseillé), `CRON_SECRET`, `UNSUBSCRIBE_SECRET`, `APP_URL`, la clé IA, et les variables SMTP pour l'envoi.
 
 Limites conseillées pour le rôle Postgres de l'application : une requête ou une transaction abandonnée ne doit jamais bloquer la file longtemps.
 
@@ -197,7 +202,7 @@ Le coût IA estimé (tokens + recherches web) s'affiche pour chaque campagne et 
 
 ## Prospection responsable
 
-Prospecta est conçu pour une prospection B2B ciblée et respectueuse. Il ne remplace pas un avis juridique ; vérifiez les règles applicables dans vos pays cibles (en France et dans l'UE : RGPD et recommandations de la CNIL sur la prospection B2B).
+Ciblora est conçu pour une prospection B2B ciblée et respectueuse. Il ne remplace pas un avis juridique ; vérifiez les règles applicables dans vos pays cibles (en France et dans l'UE : RGPD et recommandations de la CNIL sur la prospection B2B).
 
 - Le message doit concerner la fonction professionnelle du destinataire ; identifiez-vous clairement et renseignez `SENDER_ADDRESS`.
 - Chaque email contient un lien de désinscription en un clic (en-têtes `List-Unsubscribe`), qui alimente automatiquement la liste d'exclusion.

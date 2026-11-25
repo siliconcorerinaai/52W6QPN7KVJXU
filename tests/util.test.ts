@@ -60,3 +60,20 @@ describe("messages d'erreur Supavisor", () => {
     expect(re.test("password authentication failed")).toBe(false);
   });
 });
+
+describe("URL publique", () => {
+  it("préfère le domaine personnalisé de production à une adresse *.vercel.app", async () => {
+    const { config } = await import("@/lib/config");
+    const saved = { app: process.env.APP_URL, prod: process.env.VERCEL_PROJECT_PRODUCTION_URL };
+    process.env.APP_URL = "https://mon-app.vercel.app/";
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = "tryciblora.com";
+    expect(config.appUrl).toBe("https://tryciblora.com");
+    process.env.APP_URL = "https://app.exemple.fr";
+    expect(config.appUrl).toBe("https://app.exemple.fr");
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = "mon-app.vercel.app";
+    process.env.APP_URL = "https://mon-app.vercel.app";
+    expect(config.appUrl).toBe("https://mon-app.vercel.app");
+    process.env.APP_URL = saved.app ?? "";
+    process.env.VERCEL_PROJECT_PRODUCTION_URL = saved.prod ?? "";
+  });
+});

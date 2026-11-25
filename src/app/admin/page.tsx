@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
-import { isAdmin } from "@/lib/access";
 import { AdminPanel } from "@/components/AdminPanel";
+import { currentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
-  if (!(await isAdmin())) notFound();
+  if ((await currentUser())?.role !== "admin") notFound();
   return <AdminPanel />;
 }

@@ -1,6 +1,7 @@
 /** Boîtes d'envoi (rotation, limites, chiffrement) et détection des réponses / rebonds, sur PGlite en mémoire. */
 import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
+import { PLATFORM } from "@/lib/ownership";
 
 const ids = { campaign: "c1", company: "co1" };
 
@@ -44,7 +45,7 @@ describe("chiffrement des mots de passe", () => {
 describe("rotation des boîtes d'envoi", () => {
   it("lève une erreur explicite sans aucune boîte", async () => {
     const { pickMailbox } = await import("@/lib/outreach/mailboxes");
-    await expect(pickMailbox()).rejects.toThrow(/Aucune boîte d'envoi/);
+    await expect(pickMailbox(PLATFORM)).rejects.toThrow(/Aucune boîte d'envoi/);
   });
 
   it("choisit la boîte la moins chargée, garde la même boîte pour les relances, attend quand tout est plein", async () => {
@@ -67,18 +68,18 @@ describe("rotation des boîtes d'envoi", () => {
     for (const [i, contactId] of ["k1", "k2"].entries()) {
       await db.insert(messages).values({ id: `m-a-${i}`, campaignId: ids.campaign, contactId, step: 1, subject: "s", body: "b", status: "sent", sentAt: new Date(), mailboxId: "a" });
     }
-    expect((await pickMailbox())?.id).toBe("b");
+    expect((await pickMailbox(PLATFORM))?.id).toBe("b");
     // Relance d'une séquence partie de « a » : on attend plutôt que de changer de boîte
-    expect(await pickMailbox("a")).toBeNull();
-    expect((await pickMailbox("b"))?.id).toBe("b");
+    expect(await pickMailbox(PLATFORM, "a")).toBeNull();
+    expect((await pickMailbox(PLATFORM, "b"))?.id).toBe("b");
     // « b » se remplit à son tour
     for (const [i, contactId] of ["k3", "k4"].entries()) {
       await db.insert(messages).values({ id: `m-b-${i}`, campaignId: ids.campaign, contactId, step: 1, subject: "s", body: "b", status: "sent", sentAt: new Date(), mailboxId: "b", providerId: `<msg-${contactId}@envoi.fr>` });
     }
-    expect(await pickMailbox()).toBeNull();
+    expect(await pickMailbox(PLATFORM)).toBeNull();
     // Une boîte désactivée n'est jamais choisie
     await db.update(mailboxes).set({ enabled: false, dailyLimit: 100 }).where(eq(mailboxes.id, "a"));
-    expect(await pickMailbox()).toBeNull();
+    expect(await pickMailbox(PLATFORM)).toBeNull();
   });
 });
 

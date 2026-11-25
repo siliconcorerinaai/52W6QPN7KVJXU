@@ -6,6 +6,7 @@ import { logEvent } from "@/lib/events";
 import { config } from "@/lib/config";
 import { nextSendSlot } from "@/lib/outreach/mailer";
 import { newId, normalizeDomain } from "@/lib/util";
+import { campaignIdsOf, campaignScope, canAccess, NotFoundError, type Owner } from "@/lib/ownership";
 import {
   CampaignOfferSchema,
   CampaignPlanSchema,
@@ -36,6 +37,7 @@ export type CampaignStats = {
 };
 
 export async function createCampaign(input: {
+  userId: string | null;
   name?: string;
   prompt: string;
   plan: CampaignPlan;
@@ -53,6 +55,7 @@ export async function createCampaign(input: {
     .insert(campaigns)
     .values({
       id: newId(),
+      userId: input.userId,
       name: input.name?.trim() || input.prompt.slice(0, 60),
       prompt: input.prompt.trim(),
       status: "running",
@@ -71,6 +74,48 @@ export async function getCampaign(id: string) {
   const db = await getDb();
   const [c] = await db.select().from(campaigns).where(eq(campaigns.id, id));
   return c ?? null;
+}
+
+/** Campagne du compte, sinon NotFoundError (404) : on ne révèle pas l'existence des campagnes des autres. */
+export async function getOwnedCampaign(id: string, owner: Owner) {
+  const c = await getCampaign(id);
+  if (!c || !canAccess(c.userId, owner)) throw new NotFoundError("Campagne introuvable");
+  return c;
+}
+
+/** Contact d'une campagne du compte, sinon NotFoundError. */
+export async function getOwnedContact(contactId: string, owner: Owner) {
+  const db = await getDb();
+  const [row] = await db
+    .select({ contact: contacts, ownerId: campaigns.userId })
+    .from(contacts)
+    .innerJoin(campaigns, eq(campaigns.id, contacts.campaignId))
+    .where(eq(contacts.id, contactId));
+  if (!row || !canAccess(row.ownerId, owner)) throw new NotFoundError("Contact introuvable");
+  return row.contact;
+}
+
+/** Message d'une campagne du compte, sinon NotFoundError. */
+export async function getOwnedMessage(messageId: string, owner: Owner) {
+  const db = await getDb();
+  const [row] = await db
+    .select({ message: messages, ownerId: campaigns.userId })
+    .from(messages)
+    .innerJoin(campaigns, eq(campaigns.id, messages.campaignId))
+    .where(eq(messages.id, messageId));
+  if (!row || !canAccess(row.ownerId, owner)) throw new NotFoundError("Message introuvable");
+  return row.message;
+}
+
+/** Ne garde que les contacts appartenant aux campagnes du compte. */
+export async function ownedContactIds(ids: string[], owner: Owner): Promise<string[]> {
+  if (!ids.length) return [];
+  const db = await getDb();
+  const rows = await db
+    .select({ id: contacts.id })
+    .from(contacts)
+    .where(and(inArray(contacts.id, ids), sql`${contacts.campaignId} in ${campaignIdsOf(owner)}`));
+  return rows.map((r) => r.id);
 }
 
 async function ensureSupervisor(campaignId: string) {
@@ -181,9 +226,9 @@ export async function campaignStats(ids: string[]): Promise<Record<string, Campa
   return out;
 }
 
-export async function listCampaigns() {
+export async function listCampaigns(owner: Owner) {
   const db = await getDb();
-  const rows = await db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+  const rows = await db.select().from(campaigns).where(campaignScope(owner)).orderBy(desc(campaigns.createdAt));
   const stats = await campaignStats(rows.map((r) => r.id));
   return rows.map((r) => ({ ...r, stats: stats[r.id] }));
 }
@@ -319,19 +364,34 @@ export async function updateMessage(messageId: string, patch: { subject?: string
     .where(eq(messages.id, messageId));
 }
 
-export async function globalStats() {
+/** Statistiques du compte (ses campagnes uniquement). */
+export async function globalStats(owner: Owner) {
   const db = await getDb();
-  const [c] = await db.select({ n: sql<number>`count(*)::int`, running: sql<number>`count(*) filter (where ${campaigns.status} = 'running')::int` }).from(campaigns);
-  const [co] = await db.select({ q: sql<number>`count(*) filter (where ${companies.status} = 'qualified')::int`, all: sql<number>`count(*)::int` }).from(companies);
+  const ids = campaignIdsOf(owner);
+  const [c] = await db
+    .select({ n: sql<number>`count(*)::int`, running: sql<number>`count(*) filter (where ${campaigns.status} = 'running')::int` })
+    .from(campaigns)
+    .where(campaignScope(owner));
+  const [co] = await db
+    .select({ q: sql<number>`count(*) filter (where ${companies.status} = 'qualified')::int`, all: sql<number>`count(*)::int` })
+    .from(companies)
+    .where(sql`${companies.campaignId} in ${ids}`);
   const [ct] = await db
     .select({
       all: sql<number>`count(*)::int`,
       withEmail: sql<number>`count(*) filter (where ${contacts.emailStatus} in ('valid','risky','catch_all'))::int`,
       replied: sql<number>`count(*) filter (where ${contacts.status} = 'replied')::int`,
     })
-    .from(contacts);
-  const [m] = await db.select({ sent: sql<number>`count(*) filter (where ${messages.status} = 'sent')::int` }).from(messages);
-  const [u] = await db.select({ cost: sql<number>`coalesce(sum(${aiUsage.costUsd}),0)::float` }).from(aiUsage);
+    .from(contacts)
+    .where(sql`${contacts.campaignId} in ${ids}`);
+  const [m] = await db
+    .select({ sent: sql<number>`count(*) filter (where ${messages.status} = 'sent')::int` })
+    .from(messages)
+    .where(sql`${messages.campaignId} in ${ids}`);
+  const [u] = await db
+    .select({ cost: sql<number>`coalesce(sum(${aiUsage.costUsd}),0)::float` })
+    .from(aiUsage)
+    .where(sql`${aiUsage.campaignId} in ${ids}`);
   return {
     campaigns: c.n,
     running: c.running,

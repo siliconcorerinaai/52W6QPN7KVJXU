@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Database, KeyRound } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui";
 import { ProvidersCard, type Provider } from "@/components/ProvidersCard";
+import { AccountsCard } from "@/components/AccountsCard";
 
 type AdminSettings = {
   demoMode: boolean;
@@ -34,7 +35,7 @@ export function AdminPanel() {
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Administration</h1>
-        <p className="text-sm text-slate-500">Visible de vous seul. Les utilisateurs ne voient ni les fournisseurs, ni les coûts, ni les erreurs techniques.</p>
+        <p className="text-sm text-slate-500">Visible des administrateurs seulement. Les clients ne voient ni les fournisseurs, ni les coûts, ni les erreurs techniques.</p>
       </div>
 
       {s.demoMode && (
@@ -44,14 +45,15 @@ export function AdminPanel() {
         </div>
       )}
 
+      <AccountsCard />
+
       <ProvidersCard providers={s.providers} />
 
       <Card>
-        <CardHeader title="Accès" icon={<KeyRound className="size-4" />} />
+        <CardHeader title="Configuration" icon={<KeyRound className="size-4" />} />
         <div className="space-y-2 p-5 text-sm text-slate-600">
           <p>
-            <code className="font-mono text-xs">ADMIN_PASSWORD</code> : votre mot de passe, qui ouvre cette page. <code className="font-mono text-xs">APP_PASSWORD</code> :
-            celui que vous donnez aux utilisateurs.
+            Le premier compte créé est administrateur ; d&apos;autres adresses peuvent l&apos;être via <code className="font-mono text-xs">ADMIN_EMAILS</code>.
           </p>
           <p>Les clés et réglages techniques se changent dans les variables d&apos;environnement de l&apos;hébergement, puis par un redéploiement.</p>
         </div>

@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { contacts, suppressions } from "@/lib/db/schema";
+import { campaigns, contacts, suppressions } from "@/lib/db/schema";
 import { verifyUnsubscribeToken } from "@/lib/outreach/mailer";
 import { setContactStatus } from "@/lib/pipeline/campaigns";
 
@@ -23,12 +23,17 @@ async function unsubscribe(req: Request) {
     return page("Lien invalide", "Ce lien de désinscription n'est pas valide.", 400);
   }
   const db = await getDb();
-  const [ct] = await db.select().from(contacts).where(eq(contacts.id, contactId));
+  const [ct] = await db
+    .select({ email: contacts.email, ownerId: campaigns.userId })
+    .from(contacts)
+    .innerJoin(campaigns, eq(campaigns.id, contacts.campaignId))
+    .where(eq(contacts.id, contactId));
   if (ct?.email) {
-    await db.insert(suppressions).values({ value: ct.email.toLowerCase(), reason: "unsubscribe" }).onConflictDoNothing();
+    // Exclusion pour le compte qui a envoyé l'email (vide = plateforme).
+    await db.insert(suppressions).values({ userId: ct.ownerId ?? "", value: ct.email.toLowerCase(), reason: "unsubscribe" }).onConflictDoNothing();
     await setContactStatus(contactId, "unsubscribed");
   }
-  return page("Désinscription confirmée", "Vous ne recevrez plus de messages de notre part. Merci et bonne journée.");
+  return page("Désinscription confirmée", "Vous ne recevrez plus de messages de cet expéditeur. Merci et bonne journée.");
 }
 
 export const GET = unsubscribe;

@@ -132,8 +132,16 @@ export const config = {
       return Boolean(env("SMTP_HOST") && (env("SENDER_EMAIL") || env("SMTP_USER")));
     },
   },
+  /**
+   * URL publique (liens de désinscription). Sur Vercel, dès qu'un domaine personnalisé est branché,
+   * il remplace automatiquement une APP_URL restée en *.vercel.app.
+   */
   get appUrl() {
-    return env("APP_URL", "http://localhost:3000").replace(/\/$/, "");
+    const explicit = env("APP_URL").replace(/\/$/, "");
+    const production = env("VERCEL_PROJECT_PRODUCTION_URL");
+    const custom = production && !production.endsWith(".vercel.app") ? `https://${production}` : "";
+    if (custom && (!explicit || /\.vercel\.app$/.test(new URL(explicit).hostname))) return custom;
+    return explicit || custom || "http://localhost:3000";
   },
   worker: {
     get embedded() {

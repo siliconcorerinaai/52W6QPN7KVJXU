@@ -3,6 +3,7 @@ import { getMailbox } from "@/lib/outreach/mailboxes";
 import { verifySmtp } from "@/lib/outreach/mailer";
 import { errorMessage } from "@/lib/util";
 import { testImap } from "@/lib/outreach/mailbox-admin";
+import { requireUser } from "@/lib/session";
 
 export const maxDuration = 60;
 
@@ -10,7 +11,7 @@ export const maxDuration = 60;
 export async function POST(_req: Request, { params }: IdParams) {
   return handle(async () => {
     const { id } = await params;
-    const mb = await getMailbox(id);
+    const mb = await getMailbox(id, await requireUser());
     if (!mb) return json({ error: "Boîte introuvable" }, 404);
     let smtp: string | null = null;
     try {

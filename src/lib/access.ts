@@ -1,24 +1,13 @@
-import { headers } from "next/headers";
+import { currentUser } from "@/lib/session";
 
 /**
- * Rôle de la requête, posé par src/proxy.ts à partir du mot de passe saisi (jamais par le navigateur).
- * « admin » : le propriétaire, qui voit la configuration technique (fournisseurs, coûts, erreurs détaillées).
- * « user » : les utilisateurs, à qui l'application n'expose aucun détail technique.
+ * Rôle de la personne connectée.
+ * « admin » : le propriétaire de la plateforme, qui voit la configuration technique (fournisseurs,
+ * coûts, erreurs détaillées) et gère les comptes. « user » : les clients, à qui l'application
+ * n'expose aucun détail technique.
  */
-export const ROLE_HEADER = "x-prospecta-role";
-export type Role = "admin" | "user";
-
-export async function currentRole(): Promise<Role> {
-  try {
-    return (await headers()).get(ROLE_HEADER) === "admin" ? "admin" : "user";
-  } catch {
-    // Hors d'une requête HTTP (worker, scripts) : aucun utilisateur à protéger.
-    return "admin";
-  }
-}
-
 export async function isAdmin(): Promise<boolean> {
-  return (await currentRole()) === "admin";
+  return (await currentUser())?.role === "admin";
 }
 
 /** Statistiques sans les coûts internes (réservés à l'administrateur). */

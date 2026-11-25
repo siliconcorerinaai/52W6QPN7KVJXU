@@ -9,6 +9,7 @@ import {
   doublePrecision,
   uniqueIndex,
   index,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import type { CampaignPlan, CampaignOffer, CampaignSettings, Signal, PersonHint } from "../types";
 
@@ -21,8 +22,43 @@ const now = () => timestamp({ withTimezone: true }).notNull().defaultNow();
  */
 export const prospecta = pgSchema("prospecta");
 
+/** Comptes clients. Le premier compte créé devient administrateur (propriétaire de la plateforme). */
+export const users = prospecta.table(
+  "users",
+  {
+    id: text().primaryKey(),
+    email: text().notNull(), // toujours en minuscules
+    name: text().notNull().default(""),
+    passwordHash: text().notNull(),
+    role: text().$type<"user" | "admin">().notNull().default("user"),
+    /** Entreprises analysées autorisées par mois (protège les coûts) ; 0 = illimité. */
+    monthlyCompanyLimit: integer().notNull().default(100),
+    disabled: boolean().notNull().default(false),
+    lastLoginAt: timestamp({ withTimezone: true }),
+    createdAt: now(),
+    updatedAt: now(),
+  },
+  (t) => [uniqueIndex("users_email").on(t.email)],
+);
+
+/** Sessions de connexion : seul le hachage du jeton est stocké. */
+export const sessions = prospecta.table(
+  "sessions",
+  {
+    id: text().primaryKey(), // sha256 du jeton du cookie
+    userId: text()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    userAgent: text(),
+    createdAt: now(),
+  },
+  (t) => [index("sessions_user").on(t.userId)],
+);
+
 export const campaigns = prospecta.table("campaigns", {
   id: text().primaryKey(),
+  userId: text().references(() => users.id, { onDelete: "cascade" }),
   name: text().notNull(),
   prompt: text().notNull(),
   status: text().$type<CampaignStatus>().notNull().default("draft"),
@@ -196,6 +232,7 @@ export const aiUsage = prospecta.table(
 /** Boîtes d'envoi (rotation, limite quotidienne, détection des réponses par IMAP). */
 export const mailboxes = prospecta.table("mailboxes", {
   id: text().primaryKey(),
+  userId: text().references(() => users.id, { onDelete: "cascade" }),
   label: text().notNull(),
   fromName: text().notNull().default(""),
   fromEmail: text().notNull(),
@@ -222,11 +259,17 @@ export const appState = prospecta.table("app_state", {
   updatedAt: now(),
 });
 
-export const suppressions = prospecta.table("suppressions", {
-  value: text().primaryKey(), // email ou @domaine
-  reason: text().notNull().default("unsubscribe"),
-  createdAt: now(),
-});
+/** Exclusions par compte ; userId vide = exclusion valable pour tous les comptes. */
+export const suppressions = prospecta.table(
+  "suppressions",
+  {
+    userId: text().notNull().default(""),
+    value: text().notNull(), // email ou @domaine
+    reason: text().notNull().default("unsubscribe"),
+    createdAt: now(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.value] })],
+);
 
 export type CampaignStatus = "draft" | "running" | "paused" | "completed" | "failed";
 export type CompanyStatus = "discovered" | "researching" | "qualified" | "disqualified" | "failed";
@@ -251,3 +294,4 @@ export type Message = typeof messages.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
 export type EventRow = typeof events.$inferSelect;
 export type Mailbox = typeof mailboxes.$inferSelect;
+export type User = typeof users.$inferSelect;
