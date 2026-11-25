@@ -54,7 +54,7 @@ export function Sidebar({ demo }: { demo: boolean }) {
         {demo ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
             <div className="font-semibold">Mode démo</div>
-            Données simulées. Ajoutez <code className="font-mono">ANTHROPIC_API_KEY</code> pour prospecter pour de vrai.
+            Données simulées. Ajoutez <code className="font-mono">ANTHROPIC_API_KEY</code> ou <code className="font-mono">OPENROUTER_API_KEY</code> pour prospecter pour de vrai.
           </div>
         ) : (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">

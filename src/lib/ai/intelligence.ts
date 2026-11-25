@@ -1,4 +1,4 @@
-import type { AiContext } from "./claude";
+import type { AiContext } from "./usage";
 import type { PlanResponse, Analysis, PeopleResult, Sequence } from "./schemas";
 import type { CampaignOffer, CampaignPlan, CompanyCandidate } from "@/lib/types";
 import type { SiteDigest } from "@/lib/scrape/site";
@@ -33,7 +33,7 @@ export type WriteInput = {
   followUpDays: number;
 };
 
-/** Le « cerveau » de l'agent. Deux implémentations : Claude (réel) et démo (simulé). */
+/** Le « cerveau » de l'agent. Deux implémentations : LLM réel (Anthropic ou OpenRouter) et démo (simulé). */
 export interface Intelligence {
   readonly name: string;
   plan(input: { prompt: string; offer: CampaignOffer }, ctx: AiContext): Promise<PlanResponse>;

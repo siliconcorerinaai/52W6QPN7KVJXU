@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
-import { getDb } from "@/lib/db";
-import { aiUsage, campaigns, companies, contacts, events, messages, type Campaign } from "@/lib/db/schema";
+import { getDb, rowsOf } from "@/lib/db";
+import { aiUsage, campaigns, companies, contacts, events, jobs, messages, type Campaign } from "@/lib/db/schema";
 import { cancelCampaignJobs, enqueue } from "@/lib/jobs/queue";
 import { logEvent } from "@/lib/events";
 import { config } from "@/lib/config";
@@ -66,11 +66,10 @@ export async function getCampaign(id: string) {
 
 async function ensureSupervisor(campaignId: string) {
   const db = await getDb();
-  const res = await db.execute<Record<string, unknown>>(
-    sql`SELECT count(*)::int AS n FROM jobs WHERE campaign_id = ${campaignId} AND type = 'campaign.supervise' AND status IN ('queued','running')`,
+  const res = await db.execute(
+    sql`SELECT count(*)::int AS n FROM ${jobs} WHERE campaign_id = ${campaignId} AND type = 'campaign.supervise' AND status IN ('queued','running')`,
   );
-  const rows = (Array.isArray(res) ? res : (res as { rows: Record<string, unknown>[] }).rows) ?? [];
-  if (!Number(rows[0]?.n ?? 0)) await enqueue("campaign.supervise", { campaignId }, { campaignId });
+  if (!Number(rowsOf<{ n: number }>(res)[0]?.n ?? 0)) await enqueue("campaign.supervise", { campaignId }, { campaignId });
 }
 
 export async function updateCampaignStatus(id: string, action: "pause" | "resume" | "stop") {
