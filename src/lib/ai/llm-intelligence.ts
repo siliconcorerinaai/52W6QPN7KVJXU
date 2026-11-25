@@ -1,4 +1,4 @@
-import { research, structured } from "./claude";
+import { research, structured } from "./llm";
 import { AnalysisSchema, DiscoverySchema, PeopleSchema, PlanResponseSchema, SequenceSchema } from "./schemas";
 import type { Intelligence } from "./intelligence";
 import { digestToPrompt } from "@/lib/scrape/site";
@@ -35,8 +35,9 @@ const ANGLES = [
   "associations professionnelles, clusters, pôles de compétitivité et leurs membres",
 ];
 
-export class ClaudeIntelligence implements Intelligence {
-  readonly name = "claude";
+/** Intelligence réelle : Claude via Anthropic, ou le modèle choisi via OpenRouter. */
+export class LlmIntelligence implements Intelligence {
+  readonly name = "llm";
 
   async plan({ prompt, offer }: Parameters<Intelligence["plan"]>[0], ctx: Parameters<Intelligence["plan"]>[1]) {
     return structured({

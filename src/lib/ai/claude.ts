@@ -2,12 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { z } from "zod";
 import { config } from "@/lib/config";
-import { getDb } from "@/lib/db";
-import { aiUsage } from "@/lib/db/schema";
+import { saveUsage, type AiContext } from "./usage";
 
-type Effort = "low" | "medium" | "high" | "xhigh" | "max";
-
-export type AiContext = { campaignId?: string | null };
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+export type { AiContext };
 
 let client: Anthropic | undefined;
 function anthropic() {
@@ -51,21 +49,7 @@ async function recordUsage(ctx: AiContext, operation: string, model: string, usa
   const costUsd =
     (input * price.input + cacheRead * price.cacheRead + usage.output_tokens * price.output) / 1_000_000 +
     webSearches * WEB_SEARCH_USD;
-  try {
-    const db = await getDb();
-    await db.insert(aiUsage).values({
-      campaignId: ctx.campaignId ?? null,
-      operation,
-      model,
-      inputTokens: input,
-      outputTokens: usage.output_tokens,
-      cacheReadTokens: cacheRead,
-      webSearches,
-      costUsd,
-    });
-  } catch (e) {
-    console.error("[ai] usage non enregistré", e);
-  }
+  await saveUsage(ctx, { operation, model, inputTokens: input, outputTokens: usage.output_tokens, cacheReadTokens: cacheRead, webSearches, costUsd });
 }
 
 export class AiRefusalError extends Error {}

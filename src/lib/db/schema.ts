@@ -1,5 +1,5 @@
 import {
-  pgTable,
+  pgSchema,
   text,
   integer,
   boolean,
@@ -14,7 +14,14 @@ import type { CampaignPlan, CampaignOffer, CampaignSettings, Signal, PersonHint 
 
 const now = () => timestamp({ withTimezone: true }).notNull().defaultNow();
 
-export const campaigns = pgTable("campaigns", {
+/**
+ * Toutes les tables vivent dans un schéma Postgres dédié : Prospecta peut partager une base
+ * existante (Supabase…) sans collision de noms, et ses tables ne sont pas exposées par l'API
+ * REST publique de Supabase (qui ne sert que le schéma `public`).
+ */
+export const prospecta = pgSchema("prospecta");
+
+export const campaigns = prospecta.table("campaigns", {
   id: text().primaryKey(),
   name: text().notNull(),
   prompt: text().notNull(),
@@ -30,7 +37,7 @@ export const campaigns = pgTable("campaigns", {
   updatedAt: now(),
 });
 
-export const companies = pgTable(
+export const companies = prospecta.table(
   "companies",
   {
     id: text().primaryKey(),
@@ -70,7 +77,7 @@ export const companies = pgTable(
   ],
 );
 
-export const contacts = pgTable(
+export const contacts = prospecta.table(
   "contacts",
   {
     id: text().primaryKey(),
@@ -104,7 +111,7 @@ export const contacts = pgTable(
   ],
 );
 
-export const messages = pgTable(
+export const messages = prospecta.table(
   "messages",
   {
     id: text().primaryKey(),
@@ -132,7 +139,7 @@ export const messages = pgTable(
   ],
 );
 
-export const events = pgTable(
+export const events = prospecta.table(
   "events",
   {
     id: serial().primaryKey(),
@@ -146,7 +153,7 @@ export const events = pgTable(
   (t) => [index("events_campaign").on(t.campaignId, t.id)],
 );
 
-export const jobs = pgTable(
+export const jobs = prospecta.table(
   "jobs",
   {
     id: serial().primaryKey(),
@@ -167,7 +174,7 @@ export const jobs = pgTable(
   (t) => [index("jobs_claim").on(t.status, t.runAt, t.priority)],
 );
 
-export const aiUsage = pgTable(
+export const aiUsage = prospecta.table(
   "ai_usage",
   {
     id: serial().primaryKey(),
@@ -184,7 +191,7 @@ export const aiUsage = pgTable(
   (t) => [index("ai_usage_campaign").on(t.campaignId)],
 );
 
-export const suppressions = pgTable("suppressions", {
+export const suppressions = prospecta.table("suppressions", {
   value: text().primaryKey(), // email ou @domaine
   reason: text().notNull().default("unsubscribe"),
   createdAt: now(),

@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { getDb } from "@/lib/db";
-import { jobs, type Job } from "@/lib/db/schema";
+import { getDb, rowsOf } from "@/lib/db";
+import { campaigns, jobs, type Job } from "@/lib/db/schema";
 
 export type JobType =
   | "campaign.discover"
@@ -40,12 +40,12 @@ export async function enqueue(type: JobType, payload: Record<string, unknown>, o
  */
 export async function claimJob(workerId: string): Promise<Job | null> {
   const db = await getDb();
-  const res = await db.execute<Record<string, unknown>>(sql`
-    UPDATE jobs SET status = 'running', locked_at = now(), locked_by = ${workerId},
+  const res = await db.execute(sql`
+    UPDATE ${jobs} SET status = 'running', locked_at = now(), locked_by = ${workerId},
       attempts = attempts + 1, updated_at = now()
     WHERE id = (
-      SELECT j.id FROM jobs j
-      LEFT JOIN campaigns c ON c.id = j.campaign_id
+      SELECT j.id FROM ${jobs} j
+      LEFT JOIN ${campaigns} c ON c.id = j.campaign_id
       WHERE j.status = 'queued' AND j.run_at <= now()
         AND (j.campaign_id IS NULL OR c.status IN ('running', 'completed'))
       ORDER BY j.priority DESC, j.id ASC
@@ -53,8 +53,7 @@ export async function claimJob(workerId: string): Promise<Job | null> {
       FOR UPDATE OF j SKIP LOCKED
     )
     RETURNING id`);
-  const rows = (Array.isArray(res) ? res : (res as { rows: Record<string, unknown>[] }).rows) ?? [];
-  const id = rows[0]?.id as number | undefined;
+  const id = rowsOf<{ id: number }>(res)[0]?.id;
   if (id == null) return null;
   const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
   return job ?? null;
@@ -96,7 +95,7 @@ export async function rescheduleJob(job: Job, runAt: Date) {
 export async function recoverStaleJobs(olderThanMinutes = 10) {
   const db = await getDb();
   await db.execute(sql`
-    UPDATE jobs SET status = 'queued', locked_at = NULL, updated_at = now()
+    UPDATE ${jobs} SET status = 'queued', locked_at = NULL, updated_at = now()
     WHERE status = 'running' AND (locked_at IS NULL OR locked_at < now() - make_interval(mins => ${olderThanMinutes}))`);
 }
 
@@ -109,10 +108,9 @@ export async function cancelCampaignJobs(campaignId: string, types?: JobType[]) 
 
 export async function pendingJobCount(campaignId: string, excludeTypes: JobType[] = []): Promise<number> {
   const db = await getDb();
-  const res = await db.execute<Record<string, unknown>>(sql`
-    SELECT count(*)::int AS n FROM jobs
+  const res = await db.execute(sql`
+    SELECT count(*)::int AS n FROM ${jobs}
     WHERE campaign_id = ${campaignId} AND status IN ('queued', 'running')
     ${excludeTypes.length ? sql`AND type NOT IN (${sql.join(excludeTypes.map((t) => sql`${t}`), sql`, `)})` : sql``}`);
-  const rows = (Array.isArray(res) ? res : (res as { rows: Record<string, unknown>[] }).rows) ?? [];
-  return Number(rows[0]?.n ?? 0);
+  return Number(rowsOf<{ n: number }>(res)[0]?.n ?? 0);
 }

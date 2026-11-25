@@ -13,7 +13,7 @@ Décrivez votre client idéal **en une phrase**. Prospecta s'occupe du reste :
 
 Le tout est piloté par un **fil d'activité en direct**, avec un **entonnoir** (trouvées → qualifiées → décideurs → emails → contactés → réponses) et une **estimation du coût IA** par campagne.
 
-> 💡 Sans clé API, l'application démarre en **mode démo** : entreprises et personnes fictives (domaines en `.example`), aucun email réellement envoyé. Idéal pour découvrir l'interface.
+> 💡 Sans clé IA (Anthropic ou OpenRouter), l'application démarre en **mode démo** : entreprises et personnes fictives (domaines en `.example`), aucun email réellement envoyé. Idéal pour découvrir l'interface.
 
 ---
 
@@ -23,7 +23,7 @@ Prérequis : Node.js 22 ou plus.
 
 ```bash
 npm install
-cp .env.example .env.local   # puis renseignez ANTHROPIC_API_KEY
+cp .env.example .env.local   # puis renseignez ANTHROPIC_API_KEY ou OPENROUTER_API_KEY
 npm run dev                  # http://localhost:3000
 ```
 
@@ -37,10 +37,12 @@ Toutes les options sont décrites dans [`.env.example`](.env.example). Les princ
 
 | Variable | Rôle |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Active l'agent réel (Claude + recherche web côté serveur). Absente → mode démo. |
+| `ANTHROPIC_API_KEY` | Active l'agent réel avec Claude et sa recherche web côté serveur (multi-étapes). Prioritaire si présente. |
 | `AI_MODEL` | Modèle principal (plan, découverte, rédaction). Par défaut `claude-opus-5-5`. |
 | `AI_MODEL_FAST` | Modèle des tâches de masse (analyse de sites, classement des décideurs). Mettez `claude-haiku-5-5` pour réduire fortement les coûts. |
-| `DATABASE_URL` | Postgres externe (Supabase, Neon, RDS…). Vide → PGlite embarqué. |
+| `OPENROUTER_API_KEY` | Alternative : l'agent passe par OpenRouter (utilisé si aucune clé Anthropic, ou si `AI_PROVIDER=openrouter`). |
+| `OPENROUTER_MODEL` / `OPENROUTER_MODEL_FAST` | Identifiants de modèles OpenRouter (par défaut `anthropic/claude-opus-5.5` ; vérifiez l'identifiant exact sur openrouter.ai/models). |
+| `DATABASE_URL` | Postgres externe (Supabase, Neon, RDS…). Vide → PGlite embarqué. Les tables sont créées dans un schéma dédié `prospecta`. |
 | `SERPER_API_KEY` / `BRAVE_API_KEY` / `TAVILY_API_KEY` | Moteur de recherche complémentaire (optionnel) : plus de résultats et moins de recherches facturées par Claude. |
 | `HUNTER_API_KEY` | Format d'email et recherche d'adresses via Hunter.io (optionnel). |
 | `SMTP_VERIFY` | Vérification des boîtes par dialogue SMTP (`RCPT TO`). Nécessite le port 25 sortant, souvent bloqué chez les hébergeurs cloud. |
@@ -50,6 +52,8 @@ Toutes les options sont décrites dans [`.env.example`](.env.example). Les princ
 | `APP_URL` | URL publique, utilisée pour les liens de désinscription. |
 
 Les appels à Claude activent le **repli côté serveur** (`fallbacks: "default"`) : si le modèle principal décline une requête, l'API la relance automatiquement sur un modèle de repli.
+
+**Anthropic ou OpenRouter ?** Avec Anthropic, Claude enchaîne lui-même plusieurs recherches web et affine ses requêtes : c'est le mode le plus précis. Avec OpenRouter, chaque étape fait une recherche web (plugin `web`) dont les résultats sont fournis au modèle choisi : plus simple, un peu moins exhaustif. Les deux produisent des sorties JSON validées.
 
 ## Comment ça marche
 
@@ -80,7 +84,7 @@ src/
   app/                    pages (tableau de bord, nouvelle recherche, campagne, paramètres) + routes API
   components/             interface (fil d'activité, tableau des leads, fiche lead, éditeur de plan…)
   lib/
-    ai/                   Claude (réel) et intelligence de démonstration, schémas, prompts
+    ai/                   fournisseurs IA (Anthropic, OpenRouter), intelligence de démo, schémas, prompts
     db/                   schéma Drizzle + connexion PGlite / Postgres
     email/                formats d'email, vérification MX/SMTP, Hunter
     jobs/                 file de tâches et worker
@@ -90,12 +94,30 @@ src/
     search/               Serper, Brave, Tavily
 drizzle/                  migrations SQL
 scripts/worker.ts         worker autonome
-tests/                    tests unitaires + pipeline de bout en bout + faux serveur Claude
+tests/                    tests unitaires + pipeline de bout en bout + faux serveurs Claude et OpenRouter
 ```
 
 ## Déploiement
 
-**Serveur classique (VPS, Docker, Railway, Render…)** — recommandé :
+### Railway + Supabase (recommandé)
+
+Railway fait tourner l'application en continu : l'interface et le worker de l'agent vivent dans le même service. La configuration est fournie dans [`railway.json`](railway.json) (build, démarrage, sonde de santé `/api/health`).
+
+1. **Supabase** : ouvrez votre projet → bouton **Connect** → copiez la chaîne **Session pooler** (compatible IPv4) et remplacez `[YOUR-PASSWORD]` par le mot de passe de la base. Les tables sont créées automatiquement au premier démarrage, dans le schéma `prospecta` (aucun conflit avec vos tables existantes, et non exposé par l'API REST publique de Supabase).
+2. **Railway** : *New Project* → *Deploy from GitHub repo* → choisissez ce dépôt.
+3. Dans **Variables**, ajoutez au minimum :
+   - `DATABASE_URL` : la chaîne Supabase de l'étape 1 ;
+   - `ANTHROPIC_API_KEY` **ou** `OPENROUTER_API_KEY` ;
+   - `UNSUBSCRIBE_SECRET` : une longue chaîne aléatoire ;
+   - `APP_URL` : l'URL publique du service (après l'étape 4).
+   Puis, pour envoyer des emails : `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SENDER_EMAIL`, `SENDER_NAME`, `SENDER_ADDRESS`.
+4. **Settings → Networking → Generate Domain**, reportez l'URL dans `APP_URL`, puis redéployez.
+
+Gardez une seule instance (le worker est embarqué ; plusieurs instances fonctionnent aussi grâce au verrouillage `SKIP LOCKED`, mais ne sont pas nécessaires).
+
+### Autres hébergements
+
+**Serveur classique (VPS, Docker, Render…)** :
 
 ```bash
 DATABASE_URL=postgres://… npm run build && npm start
@@ -103,7 +125,7 @@ DATABASE_URL=postgres://… npm run build && npm start
 
 Pour séparer le web et le traitement : `EMBEDDED_WORKER=false` sur le serveur web, et `npm run worker` dans un second process (Postgres obligatoire dans ce cas).
 
-**Serverless (Vercel…)** : le worker embarqué est désactivé. Utilisez une base Postgres (`DATABASE_URL`) et appelez `GET /api/cron/tick` toutes les minutes depuis un cron, avec l'en-tête `Authorization: Bearer $CRON_SECRET`. Chaque appel traite la file pendant 4 minutes au plus.
+**Serverless (Vercel…)** : le worker embarqué est désactivé. Utilisez une base Postgres (`DATABASE_URL`, ou `POSTGRES_URL` fournie par l'intégration Supabase de Vercel) et appelez `GET /api/cron/tick` toutes les minutes depuis un cron, avec l'en-tête `Authorization: Bearer $CRON_SECRET`. Chaque appel traite la file pendant 4 minutes au plus.
 
 ## Coûts
 
@@ -127,11 +149,11 @@ Prospecta est conçu pour une prospection B2B ciblée et respectueuse. Il ne rem
 ## Tests
 
 ```bash
-npm test          # unitaires + pipeline complet en mode démo + boucle de recherche Claude simulée
+npm test          # unitaires + pipeline complet en mode démo + fournisseurs IA simulés
 npm run typecheck
 ```
 
-Les tests de la couche Claude utilisent un faux serveur d'API qui rejoue des flux SSE : aucun appel réel, aucun coût.
+Les tests des fournisseurs IA utilisent de faux serveurs (flux SSE pour Claude, JSON pour OpenRouter) : aucun appel réel, aucun coût.
 
 ## Pistes d'évolution
 

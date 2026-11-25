@@ -60,7 +60,7 @@ export default function SettingsPage() {
       {s.demoMode && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           <strong>Mode démo actif.</strong> Les entreprises, personnes et emails sont simulés (domaines en <code>.example</code>) et aucun email n&apos;est
-          réellement envoyé. Renseignez <code className="font-mono">ANTHROPIC_API_KEY</code> pour activer l&apos;agent réel.
+          réellement envoyé. Renseignez <code className="font-mono">ANTHROPIC_API_KEY</code> ou <code className="font-mono">OPENROUTER_API_KEY</code> pour activer l&apos;agent réel.
         </div>
       )}
 
@@ -166,7 +166,7 @@ export default function SettingsPage() {
         <div className="grid gap-3 p-5 text-sm sm:grid-cols-2">
           <div>
             <div className="text-xs text-slate-500">Base de données</div>
-            <div className="font-medium">{s.database === "postgres" ? "PostgreSQL (DATABASE_URL)" : "PGlite embarqué (./data/pglite)"}</div>
+            <div className="font-medium">{s.database === "postgres" ? "PostgreSQL (DATABASE_URL) — schéma prospecta" : "PGlite embarqué (./data/pglite)"}</div>
           </div>
           <div>
             <div className="text-xs text-slate-500">Worker</div>

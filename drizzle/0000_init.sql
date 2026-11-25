@@ -1,4 +1,6 @@
-CREATE TABLE "ai_usage" (
+CREATE SCHEMA IF NOT EXISTS "prospecta";
+--> statement-breakpoint
+CREATE TABLE "prospecta"."ai_usage" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"campaign_id" text,
 	"operation" text NOT NULL,
@@ -11,7 +13,7 @@ CREATE TABLE "ai_usage" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "campaigns" (
+CREATE TABLE "prospecta"."campaigns" (
 	"id" text PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"prompt" text NOT NULL,
@@ -27,7 +29,7 @@ CREATE TABLE "campaigns" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "companies" (
+CREATE TABLE "prospecta"."companies" (
 	"id" text PRIMARY KEY NOT NULL,
 	"campaign_id" text NOT NULL,
 	"domain" text NOT NULL,
@@ -58,7 +60,7 @@ CREATE TABLE "companies" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "contacts" (
+CREATE TABLE "prospecta"."contacts" (
 	"id" text PRIMARY KEY NOT NULL,
 	"campaign_id" text NOT NULL,
 	"company_id" text NOT NULL,
@@ -81,7 +83,7 @@ CREATE TABLE "contacts" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "events" (
+CREATE TABLE "prospecta"."events" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"campaign_id" text,
 	"level" text DEFAULT 'info' NOT NULL,
@@ -91,7 +93,7 @@ CREATE TABLE "events" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "jobs" (
+CREATE TABLE "prospecta"."jobs" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"type" text NOT NULL,
 	"payload" jsonb NOT NULL,
@@ -108,7 +110,7 @@ CREATE TABLE "jobs" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "messages" (
+CREATE TABLE "prospecta"."messages" (
 	"id" text PRIMARY KEY NOT NULL,
 	"campaign_id" text NOT NULL,
 	"contact_id" text NOT NULL,
@@ -125,26 +127,26 @@ CREATE TABLE "messages" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "suppressions" (
+CREATE TABLE "prospecta"."suppressions" (
 	"value" text PRIMARY KEY NOT NULL,
 	"reason" text DEFAULT 'unsubscribe' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "ai_usage" ADD CONSTRAINT "ai_usage_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "companies" ADD CONSTRAINT "companies_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "contacts" ADD CONSTRAINT "contacts_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "contacts" ADD CONSTRAINT "contacts_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "events" ADD CONSTRAINT "events_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "jobs" ADD CONSTRAINT "jobs_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "messages" ADD CONSTRAINT "messages_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "public"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "messages" ADD CONSTRAINT "messages_contact_id_contacts_id_fk" FOREIGN KEY ("contact_id") REFERENCES "public"."contacts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "ai_usage_campaign" ON "ai_usage" USING btree ("campaign_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "companies_campaign_domain" ON "companies" USING btree ("campaign_id","domain");--> statement-breakpoint
-CREATE INDEX "companies_campaign_status" ON "companies" USING btree ("campaign_id","status");--> statement-breakpoint
-CREATE UNIQUE INDEX "contacts_company_name" ON "contacts" USING btree ("company_id","full_name");--> statement-breakpoint
-CREATE INDEX "contacts_campaign_status" ON "contacts" USING btree ("campaign_id","status");--> statement-breakpoint
-CREATE INDEX "events_campaign" ON "events" USING btree ("campaign_id","id");--> statement-breakpoint
-CREATE INDEX "jobs_claim" ON "jobs" USING btree ("status","run_at","priority");--> statement-breakpoint
-CREATE UNIQUE INDEX "messages_contact_step" ON "messages" USING btree ("contact_id","step");--> statement-breakpoint
-CREATE INDEX "messages_status" ON "messages" USING btree ("status");
+ALTER TABLE "prospecta"."ai_usage" ADD CONSTRAINT "ai_usage_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "prospecta"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "prospecta"."companies" ADD CONSTRAINT "companies_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "prospecta"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "prospecta"."contacts" ADD CONSTRAINT "contacts_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "prospecta"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "prospecta"."contacts" ADD CONSTRAINT "contacts_company_id_companies_id_fk" FOREIGN KEY ("company_id") REFERENCES "prospecta"."companies"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "prospecta"."events" ADD CONSTRAINT "events_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "prospecta"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "prospecta"."jobs" ADD CONSTRAINT "jobs_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "prospecta"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "prospecta"."messages" ADD CONSTRAINT "messages_campaign_id_campaigns_id_fk" FOREIGN KEY ("campaign_id") REFERENCES "prospecta"."campaigns"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "prospecta"."messages" ADD CONSTRAINT "messages_contact_id_contacts_id_fk" FOREIGN KEY ("contact_id") REFERENCES "prospecta"."contacts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "ai_usage_campaign" ON "prospecta"."ai_usage" USING btree ("campaign_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "companies_campaign_domain" ON "prospecta"."companies" USING btree ("campaign_id","domain");--> statement-breakpoint
+CREATE INDEX "companies_campaign_status" ON "prospecta"."companies" USING btree ("campaign_id","status");--> statement-breakpoint
+CREATE UNIQUE INDEX "contacts_company_name" ON "prospecta"."contacts" USING btree ("company_id","full_name");--> statement-breakpoint
+CREATE INDEX "contacts_campaign_status" ON "prospecta"."contacts" USING btree ("campaign_id","status");--> statement-breakpoint
+CREATE INDEX "events_campaign" ON "prospecta"."events" USING btree ("campaign_id","id");--> statement-breakpoint
+CREATE INDEX "jobs_claim" ON "prospecta"."jobs" USING btree ("status","run_at","priority");--> statement-breakpoint
+CREATE UNIQUE INDEX "messages_contact_step" ON "prospecta"."messages" USING btree ("contact_id","step");--> statement-breakpoint
+CREATE INDEX "messages_status" ON "prospecta"."messages" USING btree ("status");

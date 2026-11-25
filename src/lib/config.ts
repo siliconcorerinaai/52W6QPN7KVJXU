@@ -9,16 +9,39 @@ const num = (k: string, d: number) => {
   return Number.isFinite(v) && env(k) !== "" ? v : d;
 };
 
+export type AiProvider = "anthropic" | "openrouter";
+
 export const config = {
   get demoMode() {
-    return bool("DEMO_MODE") || !env("ANTHROPIC_API_KEY");
+    return bool("DEMO_MODE") || config.ai.provider === null;
   },
   ai: {
+    /** Anthropic si sa clé est présente, sinon OpenRouter. AI_PROVIDER force le choix. */
+    get provider(): AiProvider | null {
+      const forced = env("AI_PROVIDER").toLowerCase();
+      if (forced === "openrouter" && env("OPENROUTER_API_KEY")) return "openrouter";
+      if (forced === "anthropic" && env("ANTHROPIC_API_KEY")) return "anthropic";
+      if (env("ANTHROPIC_API_KEY")) return "anthropic";
+      if (env("OPENROUTER_API_KEY")) return "openrouter";
+      return null;
+    },
     get model() {
-      return env("AI_MODEL", "claude-opus-5-5");
+      return config.ai.provider === "openrouter"
+        ? env("OPENROUTER_MODEL", "anthropic/claude-opus-5.5")
+        : env("AI_MODEL", "claude-opus-5-5");
     },
     get fastModel() {
-      return env("AI_MODEL_FAST") || env("AI_MODEL", "claude-opus-5-5");
+      return config.ai.provider === "openrouter"
+        ? env("OPENROUTER_MODEL_FAST") || config.ai.model
+        : env("AI_MODEL_FAST") || config.ai.model;
+    },
+  },
+  openrouter: {
+    get apiKey() {
+      return env("OPENROUTER_API_KEY");
+    },
+    get baseUrl() {
+      return env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").replace(/\/$/, "");
     },
   },
   search: {
@@ -90,19 +113,34 @@ export const config = {
     return env("CRON_SECRET");
   },
   get unsubscribeSecret() {
-    return env("UNSUBSCRIBE_SECRET") || env("CRON_SECRET") || env("ANTHROPIC_API_KEY") || "prospecta-dev-secret";
+    return (
+      env("UNSUBSCRIBE_SECRET") || env("CRON_SECRET") || env("ANTHROPIC_API_KEY") || env("OPENROUTER_API_KEY") || "prospecta-dev-secret"
+    );
   },
 };
 
 export type ProviderStatus = { id: string; label: string; enabled: boolean; detail: string };
 
 export function providerStatus(): ProviderStatus[] {
+  const provider = config.demoMode ? null : config.ai.provider;
+  const models = `Modèles : ${config.ai.model}${config.ai.fastModel !== config.ai.model ? ` / ${config.ai.fastModel}` : ""}`;
   return [
     {
-      id: "claude",
-      label: "Claude (IA + recherche web)",
-      enabled: !config.demoMode,
-      detail: config.demoMode ? "Mode démo — données simulées" : `Modèles : ${config.ai.model} / ${config.ai.fastModel}`,
+      id: "anthropic",
+      label: "Anthropic — Claude + recherche web native",
+      enabled: provider === "anthropic",
+      detail: provider === "anthropic" ? models : env("ANTHROPIC_API_KEY") ? "Clé présente (non utilisée)" : "ANTHROPIC_API_KEY",
+    },
+    {
+      id: "openrouter",
+      label: "OpenRouter — modèle au choix + recherche web",
+      enabled: provider === "openrouter",
+      detail:
+        provider === "openrouter"
+          ? models
+          : env("OPENROUTER_API_KEY")
+            ? "Clé présente — utilisée seulement sans clé Anthropic (ou AI_PROVIDER=openrouter)"
+            : "OPENROUTER_API_KEY",
     },
     { id: "serper", label: "Serper (Google Search)", enabled: !!config.search.serper, detail: "SERPER_API_KEY" },
     { id: "brave", label: "Brave Search", enabled: !!config.search.brave, detail: "BRAVE_API_KEY" },

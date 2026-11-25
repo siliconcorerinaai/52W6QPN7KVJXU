@@ -1,12 +1,12 @@
 {
-  "id": "60ef368b-8fcd-40c6-bc2e-dda4115a8beb",
+  "id": "323c4af3-877c-4b28-a91d-b5f92edbced3",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.ai_usage": {
+    "prospecta.ai_usage": {
       "name": "ai_usage",
-      "schema": "",
+      "schema": "prospecta",
       "columns": {
         "id": {
           "name": "id",
@@ -97,6 +97,7 @@
           "name": "ai_usage_campaign_id_campaigns_id_fk",
           "tableFrom": "ai_usage",
           "tableTo": "campaigns",
+          "schemaTo": "prospecta",
           "columnsFrom": [
             "campaign_id"
           ],
@@ -113,9 +114,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.campaigns": {
+    "prospecta.campaigns": {
       "name": "campaigns",
-      "schema": "",
+      "schema": "prospecta",
       "columns": {
         "id": {
           "name": "id",
@@ -209,9 +210,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.companies": {
+    "prospecta.companies": {
       "name": "companies",
-      "schema": "",
+      "schema": "prospecta",
       "columns": {
         "id": {
           "name": "id",
@@ -440,6 +441,7 @@
           "name": "companies_campaign_id_campaigns_id_fk",
           "tableFrom": "companies",
           "tableTo": "campaigns",
+          "schemaTo": "prospecta",
           "columnsFrom": [
             "campaign_id"
           ],
@@ -456,9 +458,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.contacts": {
+    "prospecta.contacts": {
       "name": "contacts",
-      "schema": "",
+      "schema": "prospecta",
       "columns": {
         "id": {
           "name": "id",
@@ -637,6 +639,7 @@
           "name": "contacts_campaign_id_campaigns_id_fk",
           "tableFrom": "contacts",
           "tableTo": "campaigns",
+          "schemaTo": "prospecta",
           "columnsFrom": [
             "campaign_id"
           ],
@@ -650,6 +653,7 @@
           "name": "contacts_company_id_companies_id_fk",
           "tableFrom": "contacts",
           "tableTo": "companies",
+          "schemaTo": "prospecta",
           "columnsFrom": [
             "company_id"
           ],
@@ -666,9 +670,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.events": {
+    "prospecta.events": {
       "name": "events",
-      "schema": "",
+      "schema": "prospecta",
       "columns": {
         "id": {
           "name": "id",
@@ -743,6 +747,7 @@
           "name": "events_campaign_id_campaigns_id_fk",
           "tableFrom": "events",
           "tableTo": "campaigns",
+          "schemaTo": "prospecta",
           "columnsFrom": [
             "campaign_id"
           ],
@@ -759,9 +764,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.jobs": {
+    "prospecta.jobs": {
       "name": "jobs",
-      "schema": "",
+      "schema": "prospecta",
       "columns": {
         "id": {
           "name": "id",
@@ -889,6 +894,7 @@
           "name": "jobs_campaign_id_campaigns_id_fk",
           "tableFrom": "jobs",
           "tableTo": "campaigns",
+          "schemaTo": "prospecta",
           "columnsFrom": [
             "campaign_id"
           ],
@@ -905,9 +911,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.messages": {
+    "prospecta.messages": {
       "name": "messages",
-      "schema": "",
+      "schema": "prospecta",
       "columns": {
         "id": {
           "name": "id",
@@ -1041,6 +1047,7 @@
           "name": "messages_campaign_id_campaigns_id_fk",
           "tableFrom": "messages",
           "tableTo": "campaigns",
+          "schemaTo": "prospecta",
           "columnsFrom": [
             "campaign_id"
           ],
@@ -1054,6 +1061,7 @@
           "name": "messages_contact_id_contacts_id_fk",
           "tableFrom": "messages",
           "tableTo": "contacts",
+          "schemaTo": "prospecta",
           "columnsFrom": [
             "contact_id"
           ],
@@ -1070,9 +1078,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.suppressions": {
+    "prospecta.suppressions": {
       "name": "suppressions",
-      "schema": "",
+      "schema": "prospecta",
       "columns": {
         "value": {
           "name": "value",
@@ -1105,7 +1113,9 @@
     }
   },
   "enums": {},
-  "schemas": {},
+  "schemas": {
+    "prospecta": "prospecta"
+  },
   "sequences": {},
   "roles": {},
   "policies": {},
