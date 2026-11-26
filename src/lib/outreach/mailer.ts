@@ -48,15 +48,27 @@ export type OutgoingEmail = {
   body: string;
   contactId?: string;
   inReplyTo?: string | null;
+  /** Langue du message (code ISO) : celle du pied de page (désinscription). */
+  language?: string | null;
 };
+
+const FOOTER = {
+  fr: { stop: "Pour ne plus recevoir de messages :", link: "Se désinscrire" },
+  en: { stop: "To stop receiving these emails:", link: "Unsubscribe" },
+  es: { stop: "Para no recibir más mensajes:", link: "Darse de baja" },
+  de: { stop: "Keine weiteren Nachrichten erhalten:", link: "Abmelden" },
+  it: { stop: "Per non ricevere più messaggi:", link: "Annulla iscrizione" },
+  nl: { stop: "Geen berichten meer ontvangen:", link: "Afmelden" },
+  pt: { stop: "Para não receber mais mensagens:", link: "Cancelar inscrição" },
+};
+export const footerText = (language?: string | null) =>
+  FOOTER[(language ?? "").slice(0, 2).toLowerCase() as keyof typeof FOOTER] ?? FOOTER.en;
 
 /** Envoie un email texte + HTML minimal, avec pied de page légal et désinscription en un clic. */
 export async function sendEmail(mail: OutgoingEmail, mailbox: SendingMailbox): Promise<{ messageId: string }> {
   const senderAddress = await getSenderAddress(mailbox.userId);
-  const footerLines = [
-    senderAddress,
-    mail.contactId ? `Pour ne plus recevoir de messages : ${unsubscribeUrl(mail.contactId)}` : "",
-  ].filter(Boolean);
+  const t = footerText(mail.language ?? "fr");
+  const footerLines = [senderAddress, mail.contactId ? `${t.stop} ${unsubscribeUrl(mail.contactId)}` : ""].filter(Boolean);
   const text = `${mail.body.trim()}\n\n--\n${footerLines.join("\n")}`;
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#111">${mail.body
     .trim()
@@ -64,7 +76,7 @@ export async function sendEmail(mail: OutgoingEmail, mailbox: SendingMailbox): P
     .map((p) => `<p style="margin:0 0 12px">${linkify(escapeHtml(p)).replace(/\n/g, "<br>")}</p>`)
     .join("")}<p style="margin-top:24px;font-size:11px;color:#888">${[
     senderAddress && escapeHtml(senderAddress),
-    mail.contactId ? `<a href="${unsubscribeUrl(mail.contactId)}" style="color:#888">Se désinscrire</a>` : "",
+    mail.contactId ? `<a href="${unsubscribeUrl(mail.contactId)}" style="color:#888">${t.link}</a>` : "",
   ]
     .filter(Boolean)
     .join(" · ")}</p></div>`;
@@ -91,13 +103,59 @@ export async function verifySmtp(mailbox: SendingMailbox): Promise<void> {
   await getTransport(mailbox).verify();
 }
 
-/** Prochain créneau d'envoi : jours ouvrés, 8h–18h (heure du serveur), avec un léger aléa. */
-export function nextSendSlot(from = new Date()): Date {
+const strip = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/** Fuseau horaire des destinataires d'après le pays (heures de bureau locales). Null si inconnu. */
+export function timeZoneFor(country: string | null | undefined): string | null {
+  const c = strip(country ?? "");
+  if (!c) return null;
+  const zones: [RegExp, string][] = [
+    [/etats-unis|united states|\busa?\b|amerique/, "America/Chicago"],
+    [/canada|quebec/, "America/Toronto"],
+    [/royaume-uni|united kingdom|\buk\b|angleterre|england|irlande|ireland|portugal/, "Europe/London"],
+    [/france|belgique|belgium|suisse|switzerland|luxembourg|allemagne|germany|espagne|spain|italie|italy|pays-bas|netherlands|monaco|autriche/, "Europe/Paris"],
+    [/cote d.ivoire|ivory coast|senegal|mali|burkina|guinee|guinea|ghana|togo|mauritanie/, "Africa/Abidjan"],
+    [/cameroun|cameroon|gabon|congo|benin|niger|nigeria|tchad|centrafrique/, "Africa/Lagos"],
+    [/maroc|morocco/, "Africa/Casablanca"],
+    [/tunisie|tunisia|algerie|algeria/, "Africa/Tunis"],
+    [/emirats|emirates|dubai/, "Asia/Dubai"],
+    [/arabie|saudi/, "Asia/Riyadh"],
+    [/kenya|rwanda|ouganda|uganda|tanzanie/, "Africa/Nairobi"],
+    [/afrique du sud|south africa/, "Africa/Johannesburg"],
+    [/madagascar|maurice|mauritius|reunion/, "Indian/Mauritius"],
+  ];
+  return zones.find(([re]) => re.test(c))?.[1] ?? null;
+}
+
+/** Jour de la semaine (0 = dimanche) et heure dans un fuseau donné. */
+function localClock(d: Date, timeZone: string): { day: number; hour: number } {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", hour: "numeric", hourCycle: "h23" }).formatToParts(d);
+  const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.find((p) => p.type === "weekday")?.value ?? "Mon");
+  return { day, hour: Number(parts.find((p) => p.type === "hour")?.value ?? 12) };
+}
+
+/**
+ * Prochain créneau d'envoi : jours ouvrés, 8h–18h dans le fuseau des destinataires
+ * (heure du serveur si inconnu), avec un léger aléa.
+ */
+export function nextSendSlot(from = new Date(), timeZone?: string | null): Date {
+  if (!timeZone) {
+    const d = new Date(from);
+    const isWeekday = (x: Date) => x.getDay() >= 1 && x.getDay() <= 5;
+    if (isWeekday(d) && d.getHours() >= 8 && d.getHours() < 18) return d;
+    if (d.getHours() >= 18 || !isWeekday(d)) d.setDate(d.getDate() + 1);
+    d.setHours(8, Math.floor(Math.random() * 50), 0, 0);
+    while (!isWeekday(d)) d.setDate(d.getDate() + 1);
+    return d;
+  }
+  const open = (x: Date) => {
+    const { day, hour } = localClock(x, timeZone);
+    return day >= 1 && day <= 5 && hour >= 8 && hour < 18;
+  };
+  if (open(from)) return new Date(from);
+  // Avance heure par heure jusqu'à l'ouverture (au plus ~3 jours), puis ajoute un léger aléa.
   const d = new Date(from);
-  const isWeekday = (x: Date) => x.getDay() >= 1 && x.getDay() <= 5;
-  if (isWeekday(d) && d.getHours() >= 8 && d.getHours() < 18) return d;
-  if (d.getHours() >= 18 || !isWeekday(d)) d.setDate(d.getDate() + 1);
-  d.setHours(8, Math.floor(Math.random() * 50), 0, 0);
-  while (!isWeekday(d)) d.setDate(d.getDate() + 1);
-  return d;
+  d.setUTCMinutes(0, 0, 0);
+  for (let i = 0; i < 24 * 4 && !open(d); i++) d.setTime(d.getTime() + 3_600_000);
+  return new Date(d.getTime() + Math.floor(Math.random() * 50) * 60_000);
 }
