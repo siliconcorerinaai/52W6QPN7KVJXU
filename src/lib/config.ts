@@ -43,6 +43,10 @@ export const config = {
     get baseUrl() {
       return env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").replace(/\/$/, "");
     },
+    /** Modèle de génération d'images (échantillons visuels offerts aux prospects). */
+    get imageModel() {
+      return env("OPENROUTER_IMAGE_MODEL", "google/gemini-2.5-flash-image");
+    },
   },
   search: {
     get serper() {

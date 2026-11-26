@@ -132,7 +132,7 @@ export class DemoIntelligence implements Intelligence {
     return { people, signals: [pick(r, SIGNALS)].map((s) => ({ ...s, source: null, date: "2026-11" })), sources: [] };
   }
 
-  async writeSequence({ contact, company, offer, steps, followUpDays }: Parameters<Intelligence["writeSequence"]>[0]) {
+  async writeSequence({ contact, company, offer, steps, followUpDays, sampleUrl }: Parameters<Intelligence["writeSequence"]>[0]) {
     await sleep(1000);
     const first = splitName(contact.fullName).first;
     const signal = company.signals[0]?.text ?? `Développement de l'activité à ${company.location ?? "votre siège"}`;
@@ -142,7 +142,7 @@ export class DemoIntelligence implements Intelligence {
     const all = [
       {
         subject: `${company.name} et ${offer.product ? offer.product.split(" ").slice(0, 3).join(" ") : "votre croissance"}`,
-        body: `Bonjour ${first},\n\nUne actualité a retenu mon attention chez ${company.name} : « ${signal.replace(/\.$/, "")} ». Dans ce contexte, ${valueProp.replace(/\.$/, "")}.\n\nSeriez-vous ouvert(e) à ${offer.callToAction} la semaine prochaine pour voir si c'est pertinent pour vous ?${offer.bookingUrl ? `\nVous pouvez choisir un créneau ici :\n${offer.bookingUrl}` : ""}\n\nBien à vous,\n${sender}`,
+        body: `Bonjour ${first},\n\nUne actualité a retenu mon attention chez ${company.name} : « ${signal.replace(/\.$/, "")} ». Dans ce contexte, ${valueProp.replace(/\.$/, "")}.${sampleUrl ? `\n\nJ'ai préparé gratuitement un visuel pour ${company.name}, à votre image :\n${sampleUrl}` : ""}\n\nSeriez-vous ouvert(e) à ${offer.callToAction} la semaine prochaine pour voir si c'est pertinent pour vous ?${offer.bookingUrl ? `\nVous pouvez choisir un créneau ici :\n${offer.bookingUrl}` : ""}\n\nBien à vous,\n${sender}`,
         delayDays: 0,
       },
       {
@@ -188,5 +188,17 @@ export class DemoIntelligence implements Intelligence {
 
   async resolveDomains({ companies }: Parameters<Intelligence["resolveDomains"]>[0]) {
     return companies.map((c) => ({ name: c.name, domain: `${slug(c.name)}.example` }));
+  }
+
+  async generateVisual({ company, brief }: Parameters<Intelligence["generateVisual"]>[0]) {
+    await sleep(300);
+    const esc = (t: string) => t.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs>
+<rect width="1080" height="1080" fill="url(#g)"/>
+<text x="540" y="520" font-family="Arial, sans-serif" font-size="72" font-weight="700" fill="#fff" text-anchor="middle">${esc(company.name)}</text>
+<text x="540" y="600" font-family="Arial, sans-serif" font-size="32" fill="#e0e7ff" text-anchor="middle">${esc(company.industry ?? "Visuel de démonstration")}</text>
+</svg>`;
+    return { mime: "image/svg+xml", data: Buffer.from(svg), prompt: `Démo — ${brief}` };
   }
 }

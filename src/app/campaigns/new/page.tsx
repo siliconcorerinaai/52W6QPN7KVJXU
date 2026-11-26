@@ -419,6 +419,25 @@ function NewCampaign() {
                   hint="Signaux d'achat récents et décideurs recherchés en profondeur (plus précis, un peu plus long)."
                 />
                 <Toggle checked={settings.autoWrite} onChange={(v) => setS("autoWrite", v)} label="Rédaction automatique" hint="Une séquence personnalisée est rédigée pour chaque lead trouvé." />
+                <div className="sm:col-span-2 space-y-3 rounded-xl border border-brand-100 bg-brand-50/40 p-4">
+                  <Toggle
+                    checked={!!settings.visualSample}
+                    onChange={(v) => setS("visualSample", v)}
+                    label="Offrir un visuel personnalisé à chaque prospect"
+                    hint="L'agent crée un visuel promo à l'image de chaque entreprise qualifiée et le glisse dans le premier email. Donner avant de demander fait nettement plus répondre."
+                  />
+                  {settings.visualSample && (
+                    <div>
+                      <Label hint="(facultatif)">Ce que montre le visuel</Label>
+                      <Input
+                        value={settings.visualBrief ?? ""}
+                        onChange={(e) => setS("visualBrief", e.target.value)}
+                        placeholder="Ex. : affiche promo pour Instagram mettant en avant leur produit phare"
+                        maxLength={500}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
               {showAdvanced && (
                 <>

@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  customType,
 } from "drizzle-orm/pg-core";
 import type { CampaignPlan, CampaignOffer, CampaignSettings, Signal, PersonHint } from "../types";
 
@@ -112,6 +113,42 @@ export const companies = prospecta.table(
     index("companies_campaign_status").on(t.campaignId, t.status),
   ],
 );
+
+/** Octets bruts (images) : Buffer côté Node, quel que soit le pilote (postgres-js ou PGlite). */
+const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
+  dataType: () => "bytea",
+  toDriver: (v) => v,
+  fromDriver: (v) => Buffer.from(v),
+});
+
+export type SampleStatus = "pending" | "ready" | "failed";
+
+/**
+ * Échantillon visuel offert à une entreprise prospectée (visuel promo à son image).
+ * L'identifiant, aléatoire, sert d'adresse publique : /v/<id>.
+ */
+export const samples = prospecta.table(
+  "samples",
+  {
+    id: text().primaryKey(),
+    campaignId: text()
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    companyId: text()
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    status: text().$type<SampleStatus>().notNull().default("pending"),
+    mime: text(),
+    data: bytea(),
+    prompt: text(),
+    language: text(),
+    error: text(),
+    createdAt: now(),
+    updatedAt: now(),
+  },
+  (t) => [uniqueIndex("samples_company").on(t.companyId)],
+);
+export type Sample = typeof samples.$inferSelect;
 
 export const contacts = prospecta.table(
   "contacts",

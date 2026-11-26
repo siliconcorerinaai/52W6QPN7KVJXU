@@ -32,7 +32,11 @@ export type WriteInput = {
   contact: Contact;
   steps: number;
   followUpDays: number;
+  /** Lien du visuel offert à l'entreprise, à citer dans le premier email. */
+  sampleUrl?: string | null;
 };
+
+export type VisualInput = { company: Company; offer: CampaignOffer; brief: string };
 
 export type LinkInput = {
   kind: LinkKind;
@@ -73,6 +77,8 @@ export interface Intelligence {
   writeSequence(input: WriteInput, ctx: AiContext): Promise<Sequence>;
   /** Construit le plan (et l'offre ou la liste d'entreprises) à partir d'un lien et d'un pays. */
   fromLink(input: LinkInput, ctx: AiContext): Promise<LinkResult>;
+  /** Génère le visuel promo offert à une entreprise (à son image). */
+  generateVisual(input: VisualInput, ctx: AiContext): Promise<{ mime: string; data: Buffer; prompt: string }>;
   /** Retrouve le site officiel d'entreprises connues seulement par leur nom. */
   resolveDomains(input: ResolveInput, ctx: AiContext): Promise<{ name: string; domain: string | null }[]>;
 }

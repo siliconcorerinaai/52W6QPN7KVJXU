@@ -1,5 +1,7 @@
 import type { z } from "zod";
 import { research, structured } from "./llm";
+import { generateImage } from "./openrouter";
+import { visualPrompt } from "@/lib/visual-prompt";
 import {
   AnalysisSchema,
   DiscoverySchema,
@@ -293,7 +295,7 @@ Nombre de contacts souhaités : ${count}`;
   }
 
   async writeSequence(input: Parameters<Intelligence["writeSequence"]>[0], ctx: Parameters<Intelligence["writeSequence"]>[1]) {
-    const { offer, company, contact, steps, followUpDays, plan } = input;
+    const { offer, company, contact, steps, followUpDays, plan, sampleUrl } = input;
     const language = offer.language && offer.language !== "auto" ? offer.language : company.language || "fr";
     const signals = company.signals.map((s) => `- [${s.type}] ${s.text}${s.date ? ` (${s.date})` : ""}`).join("\n");
     return structured({
@@ -308,6 +310,7 @@ Règles :
 - Un seul problème, une seule proposition de valeur, un seul appel à l'action, à faible friction.
 - 60 à 120 mots pour le premier email, 40 à 80 pour les relances. Texte brut, paragraphes courts, aucune pièce jointe, aucun emoji.
 - Aucun lien, sauf le lien de prise de rendez-vous s'il est fourni : place-le tel quel, sur sa propre ligne, dans l'appel à l'action du premier email et de la dernière relance (pas ailleurs).
+- Si un visuel offert est indiqué : c'est le cœur du premier email. Dis en une phrase que tu l'as préparé gratuitement pour eux, à leur image, et donne son lien tel quel sur sa propre ligne (premier email seulement ; les relances peuvent y faire allusion sans remettre le lien). L'appel à l'action devient : « voulez-vous la version finale, ou une vidéo du même style ? ».
 - Les relances apportent un angle nouveau (preuve, cas client, question) et ne disent pas « je me permets de relancer ».
 - Objets courts (2 à 6 mots), naturels, en minuscules sauf noms propres.
 - N'invente aucun chiffre, client ou résultat qui ne figure pas dans l'offre.
@@ -318,7 +321,8 @@ Nom : ${offer.senderName || "—"}
 Offre : ${offer.product || "—"}
 Proposition de valeur : ${offer.valueProposition || "—"}
 Appel à l'action : ${offer.callToAction}
-Lien de prise de rendez-vous : ${offer.bookingUrl || "aucun (ne mets aucun lien)"}
+Lien de prise de rendez-vous : ${offer.bookingUrl || "aucun"}
+Visuel offert, préparé pour ce prospect : ${sampleUrl || "aucun"}
 Ton : ${offer.tone}
 
 DESTINATAIRE
@@ -468,5 +472,11 @@ de cette entreprise (de préférence son implantation en ${country}). Jamais d'a
       prompt: `Pays : ${country}\n\nTrouve le site officiel de ces entreprises :\n${list}`,
     });
     return r.data.companies;
+  }
+
+  async generateVisual(input: Parameters<Intelligence["generateVisual"]>[0], ctx: Parameters<Intelligence["generateVisual"]>[1]) {
+    const prompt = visualPrompt(input.company, input.brief);
+    const image = await generateImage({ operation: "visual", ctx, prompt });
+    return { ...image, prompt };
   }
 }

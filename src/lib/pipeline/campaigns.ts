@@ -3,6 +3,7 @@ import { getDb, rowsOf } from "@/lib/db";
 import { aiUsage, campaigns, companies, contacts, events, jobs, messages, type Campaign } from "@/lib/db/schema";
 import { cancelCampaignJobs, enqueue } from "@/lib/jobs/queue";
 import { logEvent } from "@/lib/events";
+import { sampleOf } from "@/lib/visuals";
 import { config } from "@/lib/config";
 import { nextSendSlot } from "@/lib/outreach/mailer";
 import { newId, normalizeDomain } from "@/lib/util";
@@ -138,7 +139,7 @@ export async function updateCampaignStatus(id: string, action: "pause" | "resume
     await ensureSupervisor(id);
     await logEvent(id, "info", "resume", "▶️ Campagne relancée.");
   } else {
-    await cancelCampaignJobs(id, ["campaign.discover", "company.research", "company.contacts", "contact.email", "contact.write", "campaign.supervise"]);
+    await cancelCampaignJobs(id, ["campaign.discover", "company.research", "company.contacts", "company.visual", "contact.email", "contact.write", "campaign.supervise"]);
     await db.update(campaigns).set({ status: "completed", completedAt: new Date(), updatedAt: new Date() }).where(eq(campaigns.id, id));
     await logEvent(id, "warn", "stop", "⏹️ Recherche arrêtée manuellement. Les envois approuvés continuent.");
   }
@@ -278,7 +279,8 @@ export async function getContactDetail(contactId: string) {
   if (!contact) return null;
   const [company] = await db.select().from(companies).where(eq(companies.id, contact.companyId));
   const msgs = await db.select().from(messages).where(eq(messages.contactId, contactId)).orderBy(messages.step);
-  return { contact, company, messages: msgs };
+  const sample = company ? await sampleOf(company.id) : null;
+  return { contact, company, messages: msgs, sample };
 }
 
 /** Rédige (ou régénère) les séquences d'une liste de contacts. */

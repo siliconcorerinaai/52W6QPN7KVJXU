@@ -6,6 +6,7 @@ export type JobType =
   | "campaign.discover"
   | "company.research"
   | "company.contacts"
+  | "company.visual"
   | "contact.email"
   | "contact.write"
   | "message.send"

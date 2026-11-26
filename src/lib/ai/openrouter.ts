@@ -19,8 +19,9 @@ type ChatResponse = {
   choices?: {
     finish_reason?: string;
     message?: {
-      content?: string | null;
+      content?: string | { type?: string; image_url?: { url?: string } }[] | null;
       refusal?: string | null;
+      images?: { type?: string; image_url?: { url?: string } }[];
       annotations?: { type: string; url_citation?: { url: string; title?: string } }[];
     };
   }[];
@@ -148,7 +149,8 @@ async function completeJson<S extends z.ZodType>(opts: {
       if (a.type === "url_citation" && a.url_citation?.url) sources.push(a.url_citation.url);
     }
     if (choice?.message?.refusal) throw new Error(`Requête refusée par le modèle (${opts.operation}) : ${choice.message.refusal}`);
-    const content = choice?.message?.content ?? "";
+    const raw = choice?.message?.content ?? "";
+    const content = typeof raw === "string" ? raw : raw.map((p) => ("text" in p ? String(p.text) : "")).join("");
     if (choice?.finish_reason === "length") throw new Error(`Réponse tronquée (max_tokens) pour ${opts.operation}`);
 
     let error: string;
@@ -196,4 +198,41 @@ export async function research<S extends z.ZodType>(opts: {
     system: `${opts.system}\n\nDes résultats de recherche web te sont fournis : appuie-toi uniquement sur eux et sur des faits vérifiables. N'invente jamais d'information.`,
     web: { maxResults },
   });
+}
+
+/** Décode une image renvoyée en « data URL » base64 (format des modèles d'images d'OpenRouter). */
+export function decodeDataUrl(url: string): { mime: string; data: Buffer } | null {
+  const m = url.match(/^data:(image\/[\w.+-]+);base64,(.+)$/s);
+  return m ? { mime: m[1], data: Buffer.from(m[2], "base64") } : null;
+}
+
+/**
+ * Génère une image avec le modèle d'images configuré (OPENROUTER_IMAGE_MODEL), via « chat completions »
+ * avec `modalities: ["image", "text"]` : l'image revient dans `message.images[].image_url.url`.
+ */
+export async function generateImage(opts: { operation: string; ctx: AiContext; prompt: string; aspectRatio?: string }) {
+  if (!config.openrouter.apiKey) throw new Error("Génération d'images indisponible : clé OpenRouter manquante");
+  const model = config.openrouter.imageModel;
+  const json = await chat({
+    model,
+    messages: [{ role: "user", content: opts.prompt }],
+    modalities: ["image", "text"],
+    image_config: { aspect_ratio: opts.aspectRatio ?? "1:1" },
+  });
+  await saveUsage(opts.ctx, {
+    operation: opts.operation,
+    model,
+    inputTokens: json.usage?.prompt_tokens ?? 0,
+    outputTokens: json.usage?.completion_tokens ?? 0,
+    webSearches: 0,
+    costUsd: json.usage?.cost ?? 0,
+  });
+  const message = json.choices?.[0]?.message;
+  if (message?.refusal) throw new Error(`Image refusée par le modèle : ${message.refusal}`);
+  const parts = [...(message?.images ?? []), ...(Array.isArray(message?.content) ? message.content : [])];
+  for (const p of parts) {
+    const image = p.image_url?.url ? decodeDataUrl(p.image_url.url) : null;
+    if (image) return image;
+  }
+  throw new Error(`Aucune image renvoyée par ${model}`);
 }
