@@ -93,7 +93,11 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
       setStats(j.stats);
       if (j.events.length) {
         lastEvent.current = j.events[j.events.length - 1].id;
-        setEvents((prev) => [...prev, ...j.events].slice(-400));
+        // Deux rafraîchissements peuvent se croiser : on n'ajoute pas deux fois le même événement.
+        setEvents((prev) => {
+          const seen = new Set(prev.map((e) => e.id));
+          return [...prev, ...(j.events as FeedEvent[]).filter((e) => !seen.has(e.id))].slice(-400);
+        });
       }
     }
     if (r2.ok) setLeads((await r2.json()).leads);

@@ -1,11 +1,25 @@
+import type { z } from "zod";
 import { research, structured } from "./llm";
-import { AnalysisSchema, DiscoverySchema, PeopleSchema, PlanResponseSchema, SequenceSchema } from "./schemas";
-import type { Intelligence } from "./intelligence";
+import {
+  AnalysisSchema,
+  DiscoverySchema,
+  ListExtractionSchema,
+  ListPlanSchema,
+  OwnSiteSchema,
+  PeopleSchema,
+  PlanResponseSchema,
+  ResolveSchema,
+  SequenceSchema,
+  TargetSiteSchema,
+  type PlanResponse,
+} from "./schemas";
+import type { Intelligence, LinkResult } from "./intelligence";
 import { digestToPrompt } from "@/lib/scrape/site";
+import { linkPageToPrompt } from "@/lib/scrape/link";
 import { formatResults, searchProviderName, webSearch, type SearchResult } from "@/lib/search";
 import { dataProviders, searchCompaniesInDatabases, searchPeopleInDatabases } from "@/lib/data/providers";
-import { isNonCompanyDomain, mapLimit, normalizeDomain, uniq } from "@/lib/util";
-import type { CampaignPlan, CompanyCandidate } from "@/lib/types";
+import { isNonCompanyDomain, mapLimit, normalizeDomain, truncate, uniq } from "@/lib/util";
+import type { CampaignOffer, CampaignPlan, CompanyCandidate, ImportedCompany } from "@/lib/types";
 
 function planToText(plan: CampaignPlan): string {
   return [
@@ -25,6 +39,51 @@ const RESEARCHER = `Tu es un chercheur B2B d'élite (Sales Development / intelli
 Tu trouves des entreprises et des décideurs réels et vérifiables. Tu privilégies les sources primaires
 (site officiel, mentions légales, pages équipe, communiqués, offres d'emploi, registres publics, presse).
 Tu ne fabriques jamais de nom, de domaine ou d'email.`;
+
+/** Règles communes à tous les plans de prospection. */
+const PLAN_RULES = `Les requêtes de recherche doivent être concrètes, variées (au moins 8), dans la langue des
+marchés ciblés, et viser des pages qui listent ou décrivent des entreprises cibles. Les personas sont des intitulés
+de poste réalistes (dans la langue du marché). Écris le reste du plan en français.
+L'outil ne prospecte que des entreprises et organisations (B2B). Si la demande vise des particuliers
+(consommateurs, personnes en difficulté, etc.) ou ne permet pas d'identifier des entreprises cibles,
+mets feasible=false, explique pourquoi dans feasibilityIssue avec une suggestion de cible B2B, et laisse
+les listes vides. Sinon feasible=true et feasibilityIssue=null.`;
+
+const offerText = (offer: CampaignOffer) =>
+  [offer.senderCompany, offer.product, offer.valueProposition].filter(Boolean).join(" — ") || "non précisé";
+
+const countryRule = (country: string) =>
+  `Pays choisi par l'utilisateur : ${country}. Le plan ne vise que des entreprises de ce pays : « geographies » contient
+${country} (et éventuellement ses régions ou villes), et les requêtes de recherche sont écrites dans la langue des affaires
+de ce pays et mentionnent le pays ou ses villes.`;
+
+/** Garantit que le pays choisi figure dans les zones du plan. */
+export function withCountry<P extends Pick<PlanResponse, "geographies">>(plan: P, country: string): P {
+  const has = plan.geographies.some((g) => g.toLowerCase().includes(country.toLowerCase()));
+  return has ? plan : { ...plan, geographies: [country, ...plan.geographies] };
+}
+
+/** Nettoie la liste extraite d'une page : pays, doublons, domaines d'annuaires. */
+export function cleanImported(
+  companies: { name: string; domain: string | null; inTargetCountry: boolean | null; reason: string }[],
+  pageDomain: string,
+  source: string,
+): { companies: ImportedCompany[]; outsideCountry: number } {
+  let outsideCountry = 0;
+  const out: ImportedCompany[] = [];
+  for (const c of companies) {
+    if (c.inTargetCountry === false) {
+      outsideCountry++;
+      continue;
+    }
+    const name = c.name.replace(/\s+/g, " ").trim().slice(0, 200);
+    if (!name) continue;
+    let domain = normalizeDomain(c.domain) ?? "";
+    if (domain && (isNonCompanyDomain(domain) || domain === pageDomain || domain.endsWith(`.${pageDomain}`))) domain = "";
+    out.push({ name, domain, reason: truncate(c.reason ?? "", 300), source });
+  }
+  return { companies: uniq(out, (c) => c.domain || `nom:${c.name.toLowerCase()}`).slice(0, 500), outsideCountry };
+}
 
 /** Angles de recherche pour varier les rounds de découverte. */
 const ANGLES = [
@@ -48,16 +107,8 @@ export class LlmIntelligence implements Intelligence {
       effort: "medium",
       system: `${RESEARCHER}
 Ta mission : transformer la description d'un client idéal (ICP), écrite en une phrase, en un plan de prospection
-précis et actionnable. Les requêtes de recherche doivent être concrètes, variées (au moins 8), dans la langue des
-marchés ciblés, et viser des pages qui listent ou décrivent des entreprises cibles. Les personas sont des intitulés
-de poste réalistes (dans la langue du marché). Écris le reste du plan en français.
-L'outil ne prospecte que des entreprises et organisations (B2B). Si la demande vise des particuliers
-(consommateurs, personnes en difficulté, etc.) ou ne permet pas d'identifier des entreprises cibles,
-mets feasible=false, explique pourquoi dans feasibilityIssue avec une suggestion de cible B2B, et laisse
-les listes vides. Sinon feasible=true et feasibilityIssue=null.`,
-      prompt: `Description du client idéal :\n"""${prompt}"""\n\nCe que vend l'utilisateur (pour comprendre le besoin) :\n${
-        [offer.senderCompany, offer.product, offer.valueProposition].filter(Boolean).join(" — ") || "non précisé"
-      }`,
+précis et actionnable. ${PLAN_RULES}`,
+      prompt: `Description du client idéal :\n"""${prompt}"""\n\nCe que vend l'utilisateur (pour comprendre le besoin) :\n${offerText(offer)}`,
     });
   }
 
@@ -285,5 +336,136 @@ CIBLE GLOBALE : ${plan.summary}
 
 Rédige une séquence de ${steps} email(s). Délai entre chaque relance : ${followUpDays} jours (delayDays=0 pour le premier).`,
     });
+  }
+
+  async fromLink(input: Parameters<Intelligence["fromLink"]>[0], ctx: Parameters<Intelligence["fromLink"]>[1]): Promise<LinkResult> {
+    const { kind, url, country, offer, site, page } = input;
+    const siteBlock = site ? `Contenu du site :\n${digestToPrompt(site)}` : null;
+    const unreadable = "Le site n'a pas pu être lu : renseigne-toi sur cette entreprise sur le web.";
+    // Site illisible (protégé, chargé par script…) : l'IA se renseigne sur le web à la place.
+    const ask = async <S extends z.ZodType>(operation: string, schema: S, system: string, prompt: string): Promise<z.infer<S>> =>
+      siteBlock
+        ? structured({ operation, ctx, schema, effort: "medium", system, prompt })
+        : (await research({ operation, ctx, schema, maxSearches: 4, effort: "medium", system, prompt })).data;
+
+    if (kind === "own") {
+      const r = await ask(
+        "link.own",
+        OwnSiteSchema,
+        `${RESEARCHER}
+L'utilisateur prospecte pour sa propre entreprise et te donne le lien de son site. Comprends ce qu'elle vend et à quels
+clients professionnels, puis construis le plan de prospection de ses clients idéaux.
+${countryRule(country)}
+${PLAN_RULES}`,
+        `Site de l'utilisateur : ${url}\n\n${siteBlock ?? unreadable}`,
+      );
+      const { idealCustomer, senderCompany, product, valueProposition, ...plan } = r;
+      const deduced = Object.fromEntries(
+        Object.entries({ senderCompany, product, valueProposition }).filter(([, v]) => v.trim()),
+      ) as Partial<CampaignOffer>;
+      return { plan: withCountry(plan, country), prompt: idealCustomer, offer: deduced, companies: [], seeds: [], title: senderCompany || site?.domain || url, outsideCountry: 0 };
+    }
+
+    if (kind === "target") {
+      const domain = site?.domain ?? normalizeDomain(url) ?? "";
+      const r = await ask(
+        "link.target",
+        TargetSiteSchema,
+        `${RESEARCHER}
+L'utilisateur te donne le site d'une entreprise qui est un exemple de son client idéal. Comprends ce qu'elle fait
+(activité, clientèle, taille) et construis le plan pour trouver des entreprises similaires.
+${countryRule(country)}
+${PLAN_RULES}`,
+        `Entreprise exemple : ${url}\n\n${siteBlock ?? unreadable}\n\nCe que vend l'utilisateur (pour comprendre le besoin) : ${offerText(offer)}`,
+      );
+      const { idealCustomer, targetName, targetSummary, ...plan } = r;
+      return {
+        plan: withCountry(plan, country),
+        prompt: idealCustomer,
+        offer: {},
+        companies: domain ? [{ name: targetName || domain, domain, reason: truncate(targetSummary, 300), source: url }] : [],
+        seeds: domain ? [domain] : [],
+        title: targetName || domain,
+        outsideCountry: 0,
+      };
+    }
+
+    if (!page) throw new Error("Page introuvable");
+    const content = linkPageToPrompt(page);
+    const [extraction, planRes] = await Promise.all([
+      structured({
+        operation: "link.list",
+        ctx,
+        fast: true,
+        effort: "low",
+        schema: ListExtractionSchema,
+        system: `${RESEARCHER}
+Tu lis une page qui liste des entreprises ou organisations (annuaire, exposants d'un salon, classement, membres d'une
+association, partenaires, références clients…). Extrais toutes les entreprises listées (150 au maximum), dans l'ordre
+de la page. Ignore la navigation, les réseaux sociaux, les médias et l'éditeur de la page lui-même.
+Domaine : prends-le dans les liens de la page quand il correspond à l'entreprise ; sinon mets-le seulement si tu le
+connais avec certitude ; sinon null.
+Pays choisi : ${country}. Pour chaque entreprise, indique si elle se trouve dans ce pays (inTargetCountry).`,
+        prompt: content,
+      }),
+      structured({
+        operation: "link.list.plan",
+        ctx,
+        schema: ListPlanSchema,
+        effort: "medium",
+        system: `${RESEARCHER}
+L'utilisateur te donne une page qui liste des entreprises qu'il veut prospecter. Déduis leur profil commun (secteur,
+taille, type d'activité) et construis le plan de prospection : il sert à qualifier ces entreprises, à trouver leurs
+décideurs et, si besoin, des entreprises similaires.
+${countryRule(country)}
+${PLAN_RULES}`,
+        prompt: `${truncate(content, 8000)}\n\nCe que vend l'utilisateur (pour comprendre le besoin) : ${offerText(offer)}`,
+      }),
+    ]);
+    const { idealCustomer, ...plan } = planRes;
+    const { companies, outsideCountry } = cleanImported(extraction.companies, page.domain, page.url);
+    return {
+      plan: withCountry(plan, country),
+      prompt: idealCustomer,
+      offer: {},
+      companies,
+      seeds: companies.filter((c) => c.domain).slice(0, 5).map((c) => c.domain),
+      title: extraction.listTitle || page.title || page.domain,
+      outsideCountry,
+    };
+  }
+
+  async resolveDomains(input: Parameters<Intelligence["resolveDomains"]>[0], ctx: Parameters<Intelligence["resolveDomains"]>[1]) {
+    const { companies, country } = input;
+    if (!companies.length) return [];
+    const list = companies.map((c) => `- ${c.name}${c.hint ? ` (${c.hint})` : ""}`).join("\n");
+    const system = `${RESEARCHER}
+Tu retrouves le site officiel d'entreprises à partir de leur nom. Ne donne un domaine que si tu es certain qu'il s'agit
+de cette entreprise (de préférence son implantation en ${country}). Jamais d'annuaire, de réseau social ni de média.`;
+    if (searchProviderName()) {
+      const results = await mapLimit(companies, 4, (c) => webSearch(`"${c.name}" ${country}`, 5));
+      const block = companies.map((c, i) => `### ${c.name}\n${formatResults(results[i])}`).join("\n\n");
+      const r = await structured({
+        operation: "resolve.extract",
+        ctx,
+        fast: true,
+        effort: "low",
+        schema: ResolveSchema,
+        system,
+        prompt: `Pays : ${country}\n\nEntreprises :\n${list}\n\nRésultats de recherche :\n${truncate(block, 30_000)}`,
+      });
+      return r.companies;
+    }
+    const r = await research({
+      operation: "resolve.web",
+      ctx,
+      schema: ResolveSchema,
+      fast: true,
+      effort: "low",
+      maxSearches: Math.min(15, 3 + Math.ceil(companies.length / 2)),
+      system,
+      prompt: `Pays : ${country}\n\nTrouve le site officiel de ces entreprises :\n${list}`,
+    });
+    return r.data.companies;
   }
 }

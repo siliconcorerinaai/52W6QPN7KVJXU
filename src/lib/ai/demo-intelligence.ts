@@ -1,6 +1,6 @@
-import type { Intelligence } from "./intelligence";
+import type { Intelligence, LinkResult } from "./intelligence";
 import type { PlanResponse } from "./schemas";
-import { hashString, sleep, splitName } from "@/lib/util";
+import { hashString, normalizeDomain, sleep, splitName } from "@/lib/util";
 
 /**
  * Intelligence simulée : permet d'explorer toute l'application sans clé API.
@@ -157,5 +157,36 @@ export class DemoIntelligence implements Intelligence {
       },
     ];
     return { language: "fr", steps: all.slice(0, steps) };
+  }
+
+  async fromLink({ kind, url, country, site, page }: Parameters<Intelligence["fromLink"]>[0]): Promise<LinkResult> {
+    const domain = site?.domain ?? page?.domain ?? normalizeDomain(url) ?? "site";
+    const name = site?.title || page?.title || domain;
+    const prompt =
+      kind === "own"
+        ? `Entreprises en ${country} qui ont besoin de l'offre de ${name}`
+        : kind === "target"
+          ? `Entreprises similaires à ${name} en ${country}`
+          : `Entreprises de la liste « ${name} » en ${country}`;
+    const plan = await this.plan({ prompt });
+    const companies =
+      kind === "list"
+        ? (page?.links ?? []).slice(0, 50).map((l) => ({ name: l.text || l.domain, domain: l.domain, reason: "Citée sur la page", source: url }))
+        : kind === "target"
+          ? [{ name, domain, reason: "Entreprise exemple", source: url }]
+          : [];
+    return {
+      plan: { ...plan, geographies: [country], searchQueries: plan.searchQueries.map((q) => q.replace("France", country)) },
+      prompt,
+      offer: kind === "own" ? { senderCompany: name, product: `Les services de ${name}` } : {},
+      companies,
+      seeds: kind === "target" ? [domain] : [],
+      title: name,
+      outsideCountry: 0,
+    };
+  }
+
+  async resolveDomains({ companies }: Parameters<Intelligence["resolveDomains"]>[0]) {
+    return companies.map((c) => ({ name: c.name, domain: `${slug(c.name)}.example` }));
   }
 }
