@@ -2,13 +2,62 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Bot, Briefcase, Rocket, Settings2, Sparkles, Wand2 } from "lucide-react";
+import { ArrowLeft, Bot, Briefcase, Building2, Link2, ListChecks, Rocket, Settings2, Sparkles, Target, Wand2, X } from "lucide-react";
+import clsx from "clsx";
 import { Button, Card, CardHeader, Input, Label, Textarea, Toggle } from "@/components/ui";
 import { ChipsEditor } from "@/components/ChipsEditor";
 import { EXAMPLES } from "@/components/HeroSearch";
-import type { CampaignOffer, CampaignPlan, CampaignSettings } from "@/lib/types";
+import { COUNTRIES } from "@/lib/countries";
+import type { CampaignOffer, CampaignPlan, CampaignSettings, ImportedCompany, LinkKind } from "@/lib/types";
 
 type Plan = CampaignPlan & { campaignName: string; feasible?: boolean; feasibilityIssue?: string | null };
+
+type LinkResult = {
+  plan: Plan;
+  prompt: string;
+  offer: Partial<CampaignOffer>;
+  companies: ImportedCompany[];
+  seeds: string[];
+  title: string;
+  outsideCountry: number;
+};
+
+/** Ce que le lien a apporté : affiché sur le plan et ajouté aux réglages au lancement. */
+type LinkInfo = {
+  kind: LinkKind;
+  title: string;
+  country: string;
+  companies: ImportedCompany[];
+  seeds: string[];
+  outsideCountry: number;
+  importOnly: boolean;
+};
+
+const LINK_OPTIONS: { kind: LinkKind; icon: typeof Building2; title: string; text: string; placeholder: string }[] = [
+  {
+    kind: "own",
+    icon: Building2,
+    title: "Le site de mon entreprise",
+    text: "L'agent comprend votre offre et trouve vos clients idéaux.",
+    placeholder: "https://www.votre-entreprise.com",
+  },
+  {
+    kind: "list",
+    icon: ListChecks,
+    title: "Une liste d'entreprises",
+    text: "Annuaire, exposants d'un salon, classement… L'agent les prospecte.",
+    placeholder: "https://www.salon-exemple.com/exposants",
+  },
+  {
+    kind: "target",
+    icon: Target,
+    title: "Une entreprise cible",
+    text: "L'agent la prospecte et trouve des entreprises similaires.",
+    placeholder: "https://www.client-modele.com",
+  },
+];
+
+const LINK_KEY = "ciblora.link";
 
 const DEFAULT_OFFER: CampaignOffer = {
   senderCompany: "",
@@ -45,15 +94,28 @@ function NewCampaign() {
   const [loading, setLoading] = useState<"plan" | "launch" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [mode, setMode] = useState<"describe" | "link">(params.get("mode") === "link" ? "link" : "describe");
+  const [link, setLink] = useState<{ url: string; kind: LinkKind; country: string }>({ url: "", kind: "own", country: "" });
+  const [linkInfo, setLinkInfo] = useState<LinkInfo | null>(null);
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem(OFFER_KEY);
       if (saved) setOffer({ ...DEFAULT_OFFER, ...JSON.parse(saved) });
+      const savedLink = localStorage.getItem(LINK_KEY);
+      if (savedLink) setLink((l) => ({ ...l, country: (JSON.parse(savedLink) as { country?: string }).country ?? "" }));
     } catch {
       /* stockage indisponible */
     }
   }, []);
+
+  function saveOffer(o: CampaignOffer) {
+    try {
+      localStorage.setItem(OFFER_KEY, JSON.stringify(o));
+    } catch {
+      /* stockage indisponible */
+    }
+  }
 
   const setO = (k: keyof CampaignOffer, v: string) => setOffer((o) => ({ ...o, [k]: v }));
   const setS = <K extends keyof CampaignSettings>(k: K, v: CampaignSettings[K]) => setSettings((s) => ({ ...s, [k]: v }));
@@ -63,14 +125,11 @@ function NewCampaign() {
     setError(null);
     setLoading("plan");
     try {
-      try {
-        localStorage.setItem(OFFER_KEY, JSON.stringify(offer));
-      } catch {
-        /* stockage indisponible */
-      }
+      saveOffer(offer);
       const res = await fetch("/api/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt, offer }) });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Erreur");
+      setLinkInfo(null);
       setPlan(json.plan);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
@@ -80,16 +139,70 @@ function NewCampaign() {
     }
   }
 
+  async function analyzeLink() {
+    setError(null);
+    setLoading("plan");
+    try {
+      saveOffer(offer);
+      try {
+        localStorage.setItem(LINK_KEY, JSON.stringify({ country: link.country }));
+      } catch {
+        /* stockage indisponible */
+      }
+      const res = await fetch("/api/plan/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: link.url, kind: link.kind, country: link.country, offer }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Erreur");
+      const r = json as LinkResult;
+      setPrompt(r.prompt);
+      if (link.kind === "own") setOffer((o) => ({ ...o, ...r.offer }));
+      setLinkInfo({
+        kind: link.kind,
+        title: r.title,
+        country: link.country.trim(),
+        companies: r.companies,
+        seeds: r.seeds,
+        outsideCountry: r.outsideCountry,
+        importOnly: link.kind === "list",
+      });
+      setPlan(r.plan);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  /** Réglages envoyés au lancement : ceux du formulaire, complétés par ce que le lien a apporté. */
+  function finalSettings(): CampaignSettings {
+    if (!linkInfo) return settings;
+    const n = linkInfo.companies.length;
+    const fromList = linkInfo.kind === "list";
+    return {
+      ...settings,
+      seedDomains: [...new Set([...settings.seedDomains, ...linkInfo.seeds])],
+      importedCompanies: linkInfo.companies,
+      importCursor: 0,
+      importOnly: fromList && linkInfo.importOnly,
+      targetCompanies: fromList ? Math.min(1000, Math.max(1, linkInfo.importOnly ? n : Math.max(n, settings.targetCompanies))) : settings.targetCompanies,
+    };
+  }
+
   async function launch() {
     if (!plan) return;
     setError(null);
     setLoading("launch");
     try {
       const { campaignName, feasible, feasibilityIssue, ...planBody } = plan;
+      saveOffer(offer);
       const res = await fetch("/api/campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: campaignName, prompt, plan: planBody, offer, settings }),
+        body: JSON.stringify({ name: campaignName, prompt, plan: planBody, offer, settings: finalSettings() }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Erreur");
@@ -105,7 +218,11 @@ function NewCampaign() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">{plan ? "Votre plan de prospection" : "Nouvelle recherche"}</h1>
         <p className="text-sm text-slate-500">
-          {plan ? "Ajustez le ciblage proposé par l'IA, puis lancez l'agent." : "Une phrase suffit. L'IA en déduit un plan de ciblage complet que vous pourrez ajuster."}
+          {plan
+            ? "Ajustez le ciblage proposé par l'IA, puis lancez l'agent."
+            : mode === "link"
+              ? "Collez un lien et choisissez le pays : l'agent prépare toute la prospection."
+              : "Une phrase suffit. L'IA en déduit un plan de ciblage complet que vous pourrez ajuster."}
         </p>
       </div>
 
@@ -113,6 +230,80 @@ function NewCampaign() {
 
       {!plan ? (
         <>
+          <div className="inline-flex rounded-xl bg-slate-100 p-1 text-sm">
+            {(
+              [
+                ["describe", "Décrire ma cible", Sparkles],
+                ["link", "À partir d'un lien", Link2],
+              ] as const
+            ).map(([m, label, Icon]) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={clsx(
+                  "inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 font-medium transition-colors",
+                  mode === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800",
+                )}
+              >
+                <Icon className="size-4" /> {label}
+              </button>
+            ))}
+          </div>
+
+          {mode === "link" ? (
+            <Card>
+              <CardHeader title="À partir d'un lien" subtitle="L'agent lit la page et prépare la prospection dans le pays choisi." icon={<Link2 className="size-4" />} />
+              <div className="space-y-4 p-5">
+                <div>
+                  <Label>Ce lien est…</Label>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {LINK_OPTIONS.map(({ kind, icon: Icon, title, text }) => (
+                      <button
+                        key={kind}
+                        type="button"
+                        onClick={() => setLink((l) => ({ ...l, kind }))}
+                        className={clsx(
+                          "rounded-xl border p-3 text-left transition-colors",
+                          link.kind === kind ? "border-brand-500 bg-brand-50 ring-1 ring-brand-500" : "border-slate-200 hover:border-slate-300",
+                        )}
+                      >
+                        <Icon className="size-4 text-brand-600" />
+                        <div className="mt-1.5 text-sm font-medium text-slate-900">{title}</div>
+                        <div className="text-xs text-slate-500">{text}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="sm:col-span-2">
+                    <Label>Lien</Label>
+                    <Input
+                      type="url"
+                      inputMode="url"
+                      value={link.url}
+                      onChange={(e) => setLink((l) => ({ ...l, url: e.target.value }))}
+                      placeholder={LINK_OPTIONS.find((o) => o.kind === link.kind)?.placeholder}
+                    />
+                  </div>
+                  <div>
+                    <Label>Pays</Label>
+                    <Input
+                      list="ciblora-countries"
+                      value={link.country}
+                      onChange={(e) => setLink((l) => ({ ...l, country: e.target.value }))}
+                      placeholder="Choisir ou écrire un pays"
+                    />
+                    <datalist id="ciblora-countries">
+                      {COUNTRIES.map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ) : (
           <Card>
             <CardHeader title="Votre client idéal" subtitle="Secteur, zone, taille, situation… soyez aussi précis que possible." icon={<Sparkles className="size-4" />} />
             <div className="space-y-3 p-5">
@@ -132,9 +323,18 @@ function NewCampaign() {
               </div>
             </div>
           </Card>
+          )}
 
           <Card>
-            <CardHeader title="Votre offre" subtitle="Sert à personnaliser les emails. Mémorisée pour vos prochaines recherches." icon={<Briefcase className="size-4" />} />
+            <CardHeader
+              title="Votre offre"
+              subtitle={
+                mode === "link" && link.kind === "own"
+                  ? "Déduite de votre site : vous pourrez la vérifier. Indiquez au moins le signataire."
+                  : "Sert à personnaliser les emails. Mémorisée pour vos prochaines recherches."
+              }
+              icon={<Briefcase className="size-4" />}
+            />
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <div>
                 <Label>Votre entreprise</Label>
@@ -244,9 +444,21 @@ function NewCampaign() {
           </Card>
 
           <div className="flex justify-end">
-            <Button size="lg" onClick={analyze} loading={loading === "plan"} disabled={prompt.trim().length < 8} icon={<Wand2 className="size-4" />}>
-              {loading === "plan" ? "L'IA analyse votre cible…" : "Analyser avec l'IA"}
-            </Button>
+            {mode === "link" ? (
+              <Button
+                size="lg"
+                onClick={analyzeLink}
+                loading={loading === "plan"}
+                disabled={link.url.trim().length < 4 || link.country.trim().length < 2}
+                icon={<Wand2 className="size-4" />}
+              >
+                {loading === "plan" ? "L'agent lit le lien…" : "Analyser le lien"}
+              </Button>
+            ) : (
+              <Button size="lg" onClick={analyze} loading={loading === "plan"} disabled={prompt.trim().length < 8} icon={<Wand2 className="size-4" />}>
+                {loading === "plan" ? "L'IA analyse votre cible…" : "Analyser avec l'IA"}
+              </Button>
+            )}
           </div>
         </>
       ) : (
@@ -263,6 +475,7 @@ function NewCampaign() {
               </Button>
             </div>
           )}
+          {linkInfo && <LinkSummary info={linkInfo} onChange={setLinkInfo} offer={offer} setOffer={setO} />}
           <Card>
             <CardHeader title="Ciblage" subtitle={`« ${prompt} »`} icon={<Bot className="size-4" />} />
             <div className="grid gap-4 p-5 sm:grid-cols-2">
@@ -324,7 +537,7 @@ function NewCampaign() {
             </Button>
             <div className="flex items-center gap-3">
               <span className="text-sm text-slate-500">
-                Objectif : {settings.targetCompanies} entreprises · {settings.contactsPerCompany} décideur(s) chacune
+                Objectif : {finalSettings().targetCompanies} entreprises · {settings.contactsPerCompany} décideur(s) chacune
               </span>
               <Button
                 size="lg"
@@ -340,6 +553,93 @@ function NewCampaign() {
         </>
       )}
     </div>
+  );
+}
+
+/** Ce que le lien a apporté : liste importée, entreprise exemple ou offre déduite du site. */
+function LinkSummary({
+  info,
+  onChange,
+  offer,
+  setOffer,
+}: {
+  info: LinkInfo;
+  onChange: (i: LinkInfo) => void;
+  offer: CampaignOffer;
+  setOffer: (k: keyof CampaignOffer, v: string) => void;
+}) {
+  if (info.kind === "own") {
+    return (
+      <Card>
+        <CardHeader title="Votre offre, déduite de votre site" subtitle="Elle sert à écrire les emails : corrigez-la si besoin." icon={<Building2 className="size-4" />} />
+        <div className="grid gap-4 p-5 sm:grid-cols-2">
+          <div>
+            <Label>Votre entreprise</Label>
+            <Input value={offer.senderCompany} onChange={(e) => setOffer("senderCompany", e.target.value)} />
+          </div>
+          <div>
+            <Label>Signataire</Label>
+            <Input value={offer.senderName} onChange={(e) => setOffer("senderName", e.target.value)} placeholder="Prénom Nom" />
+          </div>
+          <div className="sm:col-span-2">
+            <Label>Ce que vous vendez</Label>
+            <Input value={offer.product} onChange={(e) => setOffer("product", e.target.value)} />
+          </div>
+          <div className="sm:col-span-2">
+            <Label>Proposition de valeur</Label>
+            <Textarea rows={2} value={offer.valueProposition} onChange={(e) => setOffer("valueProposition", e.target.value)} />
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  if (info.kind === "target") {
+    return (
+      <div className="flex items-start gap-3 rounded-xl border border-brand-100 bg-brand-50 p-4 text-sm text-brand-900">
+        <Target className="mt-0.5 size-4 shrink-0" />
+        <p>
+          L&apos;agent prospecte <strong>{info.title}</strong>, puis cherche des entreprises similaires en <strong>{info.country}</strong>.
+        </p>
+      </div>
+    );
+  }
+
+  const remove = (i: number) => onChange({ ...info, companies: info.companies.filter((_, j) => j !== i) });
+  return (
+    <Card>
+      <CardHeader
+        title={`Entreprises de votre liste (${info.companies.length})`}
+        subtitle={`${info.title} · ${info.country}`}
+        icon={<ListChecks className="size-4" />}
+      />
+      <div className="space-y-4 p-5">
+        {info.outsideCountry > 0 && (
+          <p className="text-sm text-slate-500">
+            {info.outsideCountry} entreprise(s) situées hors de ce pays ont été écartées.
+          </p>
+        )}
+        <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
+          {info.companies.map((c, i) => (
+            <li key={`${c.domain}-${c.name}-${i}`} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <div className="min-w-0">
+                <div className="truncate font-medium text-slate-900">{c.name}</div>
+                <div className="truncate text-xs text-slate-500">{c.domain || "site retrouvé automatiquement"}</div>
+              </div>
+              <button type="button" onClick={() => remove(i)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label={`Retirer ${c.name}`}>
+                <X className="size-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+        <Toggle
+          checked={info.importOnly}
+          onChange={(v) => onChange({ ...info, importOnly: v })}
+          label="Prospecter uniquement ces entreprises"
+          hint={`Désactivé : l'agent cherche aussi des entreprises similaires en ${info.country}.`}
+        />
+      </div>
+    </Card>
   );
 }
 

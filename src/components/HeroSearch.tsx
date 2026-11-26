@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight, Link2, Sparkles } from "lucide-react";
 
 export const EXAMPLES = [
   "Agences web en France de 10 à 50 salariés qui vendent des sites Shopify",
@@ -46,6 +46,13 @@ export function HeroSearch() {
             Lancer l&apos;agent <ArrowRight className="size-4" />
           </button>
         </form>
+        <button
+          type="button"
+          onClick={() => router.push("/campaigns/new?mode=link")}
+          className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-white/90 underline-offset-4 hover:text-white hover:underline"
+        >
+          <Link2 className="size-4" /> Ou partez d&apos;un lien : votre site, une liste d&apos;entreprises, un client modèle
+        </button>
         <div className="mt-4 flex flex-wrap gap-2">
           {EXAMPLES.slice(0, 3).map((ex) => (
             <button key={ex} onClick={() => go(ex)} className="rounded-full bg-white/10 px-3 py-1 text-left text-xs text-white/90 ring-1 ring-white/20 hover:bg-white/20">

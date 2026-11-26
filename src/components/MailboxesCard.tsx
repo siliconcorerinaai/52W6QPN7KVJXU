@@ -289,7 +289,16 @@ export function MailboxesCard({ demo }: { demo: boolean }) {
                 <Label>Serveur SMTP</Label>
                 <div className="flex gap-2">
                   <Input value={form.smtpHost} onChange={(e) => set("smtpHost", e.target.value)} />
-                  <Input type="number" className="w-24" value={form.smtpPort} onChange={(e) => set("smtpPort", Number(e.target.value))} />
+                  <Input
+                    type="number"
+                    className="w-24"
+                    value={form.smtpPort}
+                    onChange={(e) => {
+                      const port = Number(e.target.value);
+                      // 465 = TLS direct ; 587 = STARTTLS : on règle le mode avec le port.
+                      setForm((f) => ({ ...f, smtpPort: port, smtpSecure: port === 465 ? true : port === 587 ? false : f.smtpSecure }));
+                    }}
+                  />
                 </div>
               </div>
               <div>

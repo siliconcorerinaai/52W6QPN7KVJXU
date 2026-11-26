@@ -27,6 +27,18 @@ export const CampaignOfferSchema = z.object({
 });
 export type CampaignOffer = z.infer<typeof CampaignOfferSchema>;
 
+/** Entreprise trouvée sur une page fournie par l'utilisateur ; domaine vide = à retrouver lors de la découverte. */
+export const ImportedCompanySchema = z.object({
+  name: z.string().min(1).max(200),
+  domain: z.string().max(253).default(""),
+  reason: z.string().max(300).optional(),
+  source: z.string().max(2000).optional(),
+});
+export type ImportedCompany = z.infer<typeof ImportedCompanySchema>;
+
+export const LINK_KINDS = ["own", "list", "target"] as const;
+export type LinkKind = (typeof LINK_KINDS)[number];
+
 export const CampaignSettingsSchema = z.object({
   targetCompanies: z.number().int().min(1).max(1000).default(25),
   contactsPerCompany: z.number().int().min(1).max(10).default(2),
@@ -37,6 +49,12 @@ export const CampaignSettingsSchema = z.object({
   followUpDays: z.number().int().min(1).max(30).default(3),
   seedDomains: z.array(z.string()).default([]),
   webhookUrl: z.string().default(""),
+  /** Entreprises importées depuis un lien (annuaire, liste d'exposants…), prospectées avant toute recherche. */
+  importedCompanies: z.array(ImportedCompanySchema).max(500).optional(),
+  /** Nombre d'entreprises importées déjà traitées par la découverte. */
+  importCursor: z.number().int().min(0).optional(),
+  /** true : ne prospecter que les entreprises importées (pas de recherche d'entreprises similaires). */
+  importOnly: z.boolean().optional(),
 });
 export type CampaignSettings = z.infer<typeof CampaignSettingsSchema>;
 

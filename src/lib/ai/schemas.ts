@@ -87,3 +87,59 @@ export const SequenceSchema = z.object({
   ),
 });
 export type Sequence = z.infer<typeof SequenceSchema>;
+
+// ───────────────────────────── Prospection à partir d'un lien ─────────────────────────────
+
+const idealCustomer = z
+  .string()
+  .describe("Le client idéal en une phrase, comme si l'utilisateur l'avait écrite (secteur, pays, taille, situation)");
+
+/** Site de l'entreprise de l'utilisateur : son offre + le plan pour trouver ses clients. */
+export const OwnSiteSchema = PlanResponseSchema.extend({
+  idealCustomer,
+  senderCompany: z.string().describe("Nom commercial de l'entreprise de l'utilisateur"),
+  product: z.string().describe("Ce qu'elle vend, en une phrase"),
+  valueProposition: z.string().describe("Bénéfice concret pour ses clients, 1 à 2 phrases, sans inventer de chiffres"),
+});
+export type OwnSite = z.infer<typeof OwnSiteSchema>;
+
+/** Site d'une entreprise cible : le plan pour trouver des entreprises similaires. */
+export const TargetSiteSchema = PlanResponseSchema.extend({
+  idealCustomer,
+  targetName: z.string().describe("Nom commercial de l'entreprise exemple"),
+  targetSummary: z.string().describe("Ce que fait l'entreprise exemple, en une phrase"),
+});
+export type TargetSite = z.infer<typeof TargetSiteSchema>;
+
+/** Entreprises lues sur une page qui en liste plusieurs (annuaire, exposants, classement, membres…). */
+export const ListExtractionSchema = z.object({
+  listTitle: z.string().describe("Ce que liste la page, en quelques mots (ex. « Exposants du salon X 2026 »)"),
+  companies: z.array(
+    z.object({
+      name: z.string(),
+      domain: z
+        .string()
+        .nullable()
+        .describe("Domaine du site officiel s'il figure dans les liens de la page ou si tu le connais avec certitude ; sinon null"),
+      inTargetCountry: z
+        .boolean()
+        .nullable()
+        .describe("true si l'entreprise est dans le pays choisi, false si elle est clairement ailleurs, null si on ne sait pas"),
+      reason: z.string().describe("Ce que la page dit de l'entreprise (activité, catégorie), en quelques mots"),
+    }),
+  ),
+});
+export type ListExtraction = z.infer<typeof ListExtractionSchema>;
+
+/** Plan construit à partir d'une liste : le profil commun des entreprises listées. */
+export const ListPlanSchema = PlanResponseSchema.extend({ idealCustomer });
+
+/** Sites officiels retrouvés à partir de noms d'entreprises. */
+export const ResolveSchema = z.object({
+  companies: z.array(
+    z.object({
+      name: z.string(),
+      domain: z.string().nullable().describe("Domaine du site officiel vérifié, ex. 'acme.ci' ; null si introuvable ou incertain"),
+    }),
+  ),
+});

@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { assertPublicUrl } from "@/lib/net-guard";
 import { normalizeDomain, truncate, uniq } from "@/lib/util";
 
 export type SitePage = { url: string; title: string; text: string };
@@ -30,16 +31,32 @@ const INTERESTING = [
   /clients|customers|references|case-stud|cas-clients|temoignages/i,
 ];
 
-async function fetchHtml(url: string, timeoutMs = 12_000): Promise<{ html: string; finalUrl: string } | null> {
+const MAX_REDIRECTS = 5;
+
+/**
+ * Télécharge une page HTML. Les redirections sont suivies une à une et chaque étape est
+ * contrôlée : jamais d'adresse interne (localhost, réseau privé, métadonnées du cloud).
+ */
+export async function fetchHtml(url: string, timeoutMs = 12_000): Promise<{ html: string; finalUrl: string } | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      redirect: "follow",
-      headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml", "accept-language": "fr,en;q=0.8" },
-    });
-    if (!res.ok) return null;
+    let current = url;
+    let res: Response | null = null;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      await assertPublicUrl(current);
+      res = await fetch(current, {
+        signal: ctrl.signal,
+        redirect: "manual",
+        headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml", "accept-language": "fr,en;q=0.8" },
+      });
+      const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+      if (!location) break;
+      await res.body?.cancel().catch(() => {});
+      current = new URL(location, current).href;
+      res = null;
+    }
+    if (!res || !res.ok) return null;
     const type = res.headers.get("content-type") ?? "";
     if (!type.includes("html")) return null;
     const reader = res.body?.getReader();
@@ -57,7 +74,7 @@ async function fetchHtml(url: string, timeoutMs = 12_000): Promise<{ html: strin
       }
     }
     const html = new TextDecoder("utf-8", { fatal: false }).decode(Buffer.concat(chunks));
-    return { html, finalUrl: res.url || url };
+    return { html, finalUrl: current };
   } catch {
     return null;
   } finally {
@@ -118,7 +135,7 @@ function detectTech(html: string): string[] {
   return TECH_SIGNATURES.filter(([, re]) => re.test(html)).map(([name]) => name);
 }
 
-function pageText($: cheerio.CheerioAPI): string {
+export function pageText($: cheerio.CheerioAPI): string {
   $("script, style, noscript, svg, iframe, template").remove();
   const text = $("body").text() || $.root().text();
   return text.replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, "\n").replace(/\n{2,}/g, "\n").trim();

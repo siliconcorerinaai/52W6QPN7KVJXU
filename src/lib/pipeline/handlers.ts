@@ -27,7 +27,7 @@ import { campaignOwner } from "@/lib/ownership";
 import { quotaForCampaignOwner } from "@/lib/quota";
 import { syncAllInboxes } from "@/lib/outreach/inbox";
 import { errorMessage, hashString, isNonCompanyDomain, newId, normalizeDomain, splitName, uniq } from "@/lib/util";
-import type { PersonHint, Signal } from "@/lib/types";
+import type { ImportedCompany, PersonHint, Signal } from "@/lib/types";
 import { pushWebhook } from "./export";
 
 type Handler = (job: Job) => Promise<void>;
@@ -88,6 +88,23 @@ async function discover(job: Job) {
   count = Math.min(count, quota.remaining);
 
   const round = c.discoveryRounds + 1;
+
+  // Entreprises importées depuis un lien : prospectées avant toute recherche.
+  const imported = c.settings.importedCompanies ?? [];
+  const cursor = c.settings.importCursor ?? 0;
+  if (cursor < imported.length) {
+    await importBatch(c, imported.slice(cursor, cursor + count), cursor, existing.map((x) => x.domain));
+    return;
+  }
+  if (imported.length && c.settings.importOnly) {
+    // Liste épuisée et pas de recherche d'entreprises similaires : le superviseur clôturera la campagne.
+    await db
+      .update(campaigns)
+      .set({ emptyRounds: sql`greatest(${campaigns.emptyRounds}, 2)`, updatedAt: new Date() })
+      .where(eq(campaigns.id, campaignId));
+    return;
+  }
+
   await logEvent(campaignId, "info", "discover", `🔎 Recherche n°${round} : je cherche ${count} nouvelles entreprises…`);
   const res = await intelligence().discover(
     {
@@ -145,6 +162,85 @@ async function discover(job: Job) {
       : "Aucune nouvelle entreprise trouvée sur ce tour.",
     // `tech` : détails internes, visibles seulement par l'administrateur.
     { sources: res.sources.slice(0, 20), tech: { via: res.via } },
+  );
+}
+
+/** Ajoute à la campagne un lot d'entreprises importées (en retrouvant leur site si besoin). */
+async function importBatch(c: Campaign, batch: ImportedCompany[], cursor: number, existingDomains: string[]) {
+  const campaignId = c.id;
+  const db = await getDb();
+  const known = new Set(existingDomains);
+
+  // Entreprises listées sans lien vers leur site : on le retrouve par leur nom.
+  const unresolved = batch.filter((x) => !normalizeDomain(x.domain));
+  const found = new Map<string, string>();
+  if (unresolved.length) {
+    await logEvent(campaignId, "info", "discover", `🔗 Je retrouve le site de ${unresolved.length} entreprise(s) de votre liste…`);
+    try {
+      const res = await intelligence().resolveDomains(
+        { companies: unresolved.map((x) => ({ name: x.name, hint: x.reason })), country: c.plan.geographies[0] ?? "" },
+        ctxOf(campaignId),
+      );
+      for (const r of res) {
+        const d = normalizeDomain(r.domain);
+        if (d && !isNonCompanyDomain(d)) found.set(r.name.trim().toLowerCase(), d);
+      }
+    } catch (e) {
+      console.error("[discover] sites introuvables", e);
+    }
+  }
+
+  let inserted = 0;
+  const added: string[] = [];
+  const withoutSite: string[] = [];
+  for (const x of batch) {
+    const domain = normalizeDomain(x.domain) ?? found.get(x.name.trim().toLowerCase()) ?? null;
+    if (!domain || isNonCompanyDomain(domain)) {
+      withoutSite.push(x.name);
+      continue;
+    }
+    if (known.has(domain)) continue;
+    known.add(domain);
+    const [row] = await db
+      .insert(companies)
+      .values({
+        id: newId(),
+        campaignId,
+        domain,
+        name: x.name,
+        discoveredVia: "lien",
+        discoveryReason: x.reason ?? "Entreprise de votre liste",
+        sources: x.source ? [x.source] : [],
+      })
+      .onConflictDoNothing()
+      .returning({ id: companies.id });
+    if (row) {
+      inserted++;
+      added.push(x.name);
+      await enqueue("company.research", { companyId: row.id }, { campaignId, priority: 1 });
+    }
+  }
+
+  await db
+    .update(campaigns)
+    .set({
+      settings: { ...c.settings, importCursor: cursor + batch.length },
+      discoveryRounds: c.discoveryRounds + 1,
+      // Un lot sans résultat ne compte pas comme une recherche vide tant que la liste n'est pas finie.
+      emptyRounds: 0,
+      updatedAt: new Date(),
+    })
+    .where(eq(campaigns.id, campaignId));
+
+  const total = c.settings.importedCompanies?.length ?? 0;
+  const done = Math.min(total, cursor + batch.length);
+  await logEvent(
+    campaignId,
+    inserted ? "success" : "warn",
+    "discover",
+    `📋 Votre liste (${done}/${total}) : ${
+      inserted ? `${inserted} entreprise(s) ajoutée(s) — ${added.slice(0, 5).join(", ")}${added.length > 5 ? "…" : ""}` : "aucune nouvelle entreprise"
+    }.${withoutSite.length ? ` Site introuvable pour : ${withoutSite.slice(0, 5).join(", ")}${withoutSite.length > 5 ? "…" : ""}.` : ""}`,
   );
 }
 

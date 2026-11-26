@@ -1,8 +1,7 @@
 import { handle, json, type IdParams } from "@/lib/api";
 import { getMailbox } from "@/lib/outreach/mailboxes";
 import { verifySmtp } from "@/lib/outreach/mailer";
-import { errorMessage } from "@/lib/util";
-import { testImap } from "@/lib/outreach/mailbox-admin";
+import { explainSmtpError, testImap } from "@/lib/outreach/mailbox-admin";
 import { requireUser } from "@/lib/session";
 
 export const maxDuration = 60;
@@ -17,7 +16,7 @@ export async function POST(_req: Request, { params }: IdParams) {
     try {
       await verifySmtp(mb);
     } catch (e) {
-      smtp = errorMessage(e);
+      smtp = explainSmtpError(e, mb.smtp.port, mb.smtp.secure);
     }
     const imap = mb.imap ? await testImap(mb) : "non configuré";
     return json({ smtp: smtp ?? "ok", imap: imap ?? "ok" });
