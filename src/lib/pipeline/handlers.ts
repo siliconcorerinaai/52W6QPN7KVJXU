@@ -1,7 +1,8 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   campaigns,
+  events,
   companies,
   contacts,
   messages,
@@ -21,7 +22,8 @@ import { candidateEmails, fromHunterPattern, inferPattern, isRoleEmail, type Pat
 import { detectCatchAll, domainHasMx, verifyEmail, type Verification } from "@/lib/email/verify";
 import { verificationProviders } from "@/lib/email/verifiers";
 import { hunterDomainPattern, hunterFindEmail } from "@/lib/email/hunter";
-import { nextSendSlot, sendEmail } from "@/lib/outreach/mailer";
+import { nextSendSlot, sendEmail, timeZoneFor } from "@/lib/outreach/mailer";
+import { getSenderAddress } from "@/lib/outreach/sender";
 import { NoMailboxError, pickMailbox, type SendingMailbox } from "@/lib/outreach/mailboxes";
 import { campaignOwner } from "@/lib/ownership";
 import { quotaForCampaignOwner } from "@/lib/quota";
@@ -695,6 +697,23 @@ async function isSuppressed(email: string, ownerId: string) {
   return rows.length > 0;
 }
 
+/** Prévient (au plus une fois par heure et par campagne) que l'adresse postale manque. */
+async function warnMissingAddress(campaignId: string) {
+  const db = await getDb();
+  const [recent] = await db
+    .select({ id: events.id })
+    .from(events)
+    .where(and(eq(events.campaignId, campaignId), eq(events.kind, "address"), gt(events.createdAt, new Date(Date.now() - 3_600_000))))
+    .limit(1);
+  if (recent) return;
+  await logEvent(
+    campaignId,
+    "warn",
+    "address",
+    "📮 Envois en attente : renseignez votre adresse postale dans Paramètres (obligatoire en pied d'email). Les envois reprennent tout seuls ensuite.",
+  );
+}
+
 async function sendMessage(job: Job) {
   const messageId = job.payload.messageId as string;
   const db = await getDb();
@@ -723,9 +742,15 @@ async function sendMessage(job: Job) {
           .where(and(eq(messages.contactId, ct.id), eq(messages.step, 1)))
       : [undefined];
 
+  const co = await loadCompany(ct.companyId);
+  const camp = await loadCampaign(msg.campaignId);
+  const timeZone = timeZoneFor(co?.country) ?? timeZoneFor(camp?.plan.geographies[0]);
+
   let mailbox: SendingMailbox | null = null;
   if (!config.demoMode) {
-    const slot = nextSendSlot();
+    // Campagne en pause : les envois attendent la reprise.
+    if (camp?.status === "paused") return rescheduleJob(job, new Date(Date.now() + 30 * 60_000));
+    const slot = nextSendSlot(new Date(), timeZone);
     if (slot.getTime() - Date.now() > 60_000) return rescheduleJob(job, slot);
     try {
       mailbox = await pickMailbox(owner, first?.mailboxId ?? null);
@@ -742,7 +767,12 @@ async function sendMessage(job: Job) {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       tomorrow.setHours(0, 0, 0, 0);
-      return rescheduleJob(job, nextSendSlot(tomorrow));
+      return rescheduleJob(job, nextSendSlot(tomorrow, timeZone));
+    }
+    // Adresse postale obligatoire en pied d'email (loi CAN-SPAM, RGPD…) : sans elle, on attend.
+    if (!(await getSenderAddress(mailbox.userId))) {
+      await warnMissingAddress(msg.campaignId);
+      return rescheduleJob(job, new Date(Date.now() + 15 * 60_000));
     }
   }
 
@@ -758,7 +788,8 @@ async function sendMessage(job: Job) {
     if (config.demoMode) {
       providerId = `demo-${newId()}`;
     } else {
-      const res = await sendEmail({ to: ct.email, toName: ct.fullName, subject, body: msg.body, contactId: ct.id, inReplyTo }, mailbox!);
+      const language = camp?.offer.language && camp.offer.language !== "auto" ? camp.offer.language : (co?.language ?? null);
+      const res = await sendEmail({ to: ct.email, toName: ct.fullName, subject, body: msg.body, contactId: ct.id, inReplyTo, language }, mailbox!);
       providerId = res.messageId;
     }
   } catch (e) {
@@ -794,7 +825,7 @@ async function sendMessage(job: Job) {
     .where(and(eq(messages.contactId, ct.id), eq(messages.step, msg.step + 1), inArray(messages.status, ["approved", "draft"])));
   if (next) {
     const delayMs = (config.demoMode ? 20_000 : next.delayDays * 86_400_000) || 86_400_000;
-    const at = config.demoMode ? new Date(Date.now() + delayMs) : nextSendSlot(new Date(Date.now() + delayMs));
+    const at = config.demoMode ? new Date(Date.now() + delayMs) : nextSendSlot(new Date(Date.now() + delayMs), timeZone);
     await db.update(messages).set({ status: "scheduled", scheduledAt: at, updatedAt: now }).where(eq(messages.id, next.id));
     await enqueue("message.send", { messageId: next.id }, { campaignId: msg.campaignId, runAt: at, priority: 5 });
   }
