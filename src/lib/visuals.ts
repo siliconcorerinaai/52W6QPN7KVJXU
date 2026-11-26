@@ -17,6 +17,8 @@ export { DEFAULT_VISUAL_BRIEF, visualPrompt } from "@/lib/visual-prompt";
 
 /** Délai au-delà duquel une génération « en cours » est considérée comme abandonnée. */
 const STALE_MS = 4 * 60_000;
+/** Un échec (crédits épuisés, panne du fournisseur…) est retenté au-delà de ce délai. */
+const RETRY_FAILED_MS = 10 * 60_000;
 
 
 export function sampleUrl(id: string): string {
@@ -76,12 +78,14 @@ export async function ensureSample(c: Campaign, co: Company, waitMs = 90_000): P
   const deadline = Date.now() + waitMs;
   while (true) {
     const [row] = await db.select().from(samples).where(eq(samples.companyId, co.id));
-    if (!row || row.status === "failed") return null;
+    if (!row) return null;
     if (row.status === "ready") return row;
-    if (Date.now() - row.updatedAt.getTime() > STALE_MS) {
+    const age = Date.now() - row.updatedAt.getTime();
+    if (row.status === "failed" && age < RETRY_FAILED_MS) return null;
+    if (row.status === "failed" || age > STALE_MS) {
       const [taken] = await db
         .update(samples)
-        .set({ updatedAt: new Date() })
+        .set({ status: "pending", updatedAt: new Date() })
         .where(and(eq(samples.id, row.id), eq(samples.updatedAt, row.updatedAt)))
         .returning();
       if (taken) return generateInto(taken, c, co);

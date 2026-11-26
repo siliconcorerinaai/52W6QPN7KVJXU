@@ -111,6 +111,14 @@ describe("visuel offert dans une campagne (mode démo)", () => {
     const again = await Promise.all([ensureSample(c, co), ensureSample(c, co)]);
     expect(again.map((x) => x?.id)).toEqual([rows[0].id, rows[0].id]);
 
+    // Un échec ancien (ex. crédits épuisés puis rechargés) est retenté ; un échec récent ne l'est pas.
+    await db.update(samples).set({ status: "failed", data: null, updatedAt: new Date() }).where(eq(samples.id, rows[0].id));
+    expect(await ensureSample(c, co)).toBeNull();
+    await db.update(samples).set({ updatedAt: new Date(Date.now() - 11 * 60_000) }).where(eq(samples.id, rows[0].id));
+    const retried = await ensureSample(c, co);
+    expect(retried?.id).toBe(rows[0].id);
+    expect(retried?.status).toBe("ready");
+
     // L'image est servie publiquement, sans possibilité d'exécuter un script.
     const { GET } = await import("@/app/v/[id]/image/route");
     const res = await GET(new Request("http://localhost/"), { params: Promise.resolve({ id: rows[0].id }) });
