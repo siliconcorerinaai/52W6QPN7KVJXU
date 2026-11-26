@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { mailboxes } from "@/lib/db/schema";
 import { encryptSecret } from "@/lib/crypto";
 import { listMailboxes, sentTodayByMailbox, type SendingMailbox } from "@/lib/outreach/mailboxes";
-import { publicMailbox, testImap } from "@/lib/outreach/mailbox-admin";
+import { explainSmtpError, publicMailbox, testImap } from "@/lib/outreach/mailbox-admin";
 import { verifySmtp } from "@/lib/outreach/mailer";
 import { assertPublicHost, MAIL_PORTS } from "@/lib/net-guard";
 import { requireUser } from "@/lib/session";
@@ -56,6 +56,9 @@ export async function POST(req: Request) {
     } catch (e) {
       return json({ error: errorMessage(e) }, 400);
     }
+    // Le mode TLS découle du port : 465 = TLS direct, 587 / 25 / 2525 = STARTTLS.
+    if (b.smtpPort === 465) b.smtpSecure = true;
+    else if ([587, 25, 2525].includes(b.smtpPort)) b.smtpSecure = false;
     const candidate: SendingMailbox = {
       id: "test",
       userId: user.id,
@@ -73,7 +76,7 @@ export async function POST(req: Request) {
     try {
       await verifySmtp(candidate);
     } catch (e) {
-      return json({ error: `Connexion SMTP impossible : ${errorMessage(e)}` }, 400);
+      return json({ error: `Connexion SMTP impossible : ${explainSmtpError(e, b.smtpPort, b.smtpSecure)}` }, 400);
     }
     if (candidate.imap) {
       const imapError = await testImap(candidate);

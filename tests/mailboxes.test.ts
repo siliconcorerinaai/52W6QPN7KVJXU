@@ -142,3 +142,15 @@ describe("planification de la lecture des boîtes", () => {
     expect(await claimInterval("autre_cle", 5)).toBe(true);
   });
 });
+
+describe("messages d'erreur des boîtes", () => {
+  it("explique un refus d'identifiants IMAP et un port SMTP mal réglé", async () => {
+    const { explainImapError, explainSmtpError } = await import("@/lib/outreach/mailbox-admin");
+    const imap = explainImapError(Object.assign(new Error("Command failed"), { authenticationFailed: true, responseText: "Invalid credentials" }));
+    expect(imap).toMatch(/accès IMAP est activé/);
+    expect(imap).toContain("Invalid credentials");
+    expect(explainImapError(Object.assign(new Error("Command failed"), { responseText: "IMAP access disabled" }))).toContain("IMAP access disabled");
+    expect(explainSmtpError(new Error("Connection closed unexpectedly"), 465, false)).toMatch(/port 465 sans TLS direct/);
+    expect(explainSmtpError(Object.assign(new Error("Invalid login: 535 Authentication Failed"), { responseCode: 535 }), 465, true)).toMatch(/mot de passe refusé/);
+  });
+});
