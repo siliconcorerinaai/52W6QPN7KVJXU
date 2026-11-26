@@ -38,13 +38,22 @@ const PRESETS: Record<string, { smtpHost: string; smtpPort: number; smtpSecure: 
     imapPort: 993,
     hint: "Microsoft 365 : l'authentification SMTP doit être activée pour la boîte (centre d'administration Exchange).",
   },
+  // Adresses sur votre propre domaine (organisation Zoho) : serveurs « pro ».
   zoho: {
-    smtpHost: "smtp.zoho.eu",
+    smtpHost: "smtppro.zoho.com",
     smtpPort: 465,
     smtpSecure: true,
-    imapHost: "imap.zoho.eu",
+    imapHost: "imappro.zoho.com",
     imapPort: 993,
-    hint: "Zoho Mail (UE) : activez l'accès IMAP dans les paramètres Zoho et utilisez un mot de passe d'application.",
+    hint: "Zoho Mail (compte sur zoho.com, adresse sur votre domaine) : activez l'accès IMAP dans les paramètres Zoho et utilisez un mot de passe d'application si la double authentification est active.",
+  },
+  zohoEu: {
+    smtpHost: "smtppro.zoho.eu",
+    smtpPort: 465,
+    smtpSecure: true,
+    imapHost: "imappro.zoho.eu",
+    imapPort: 993,
+    hint: "Zoho Mail (compte sur zoho.eu, adresse sur votre domaine) : activez l'accès IMAP dans les paramètres Zoho et utilisez un mot de passe d'application si la double authentification est active.",
   },
   ovh: {
     smtpHost: "ssl0.ovh.net",
@@ -239,6 +248,7 @@ export function MailboxesCard({ demo }: { demo: boolean }) {
                   ["google", "Google Workspace / Gmail"],
                   ["microsoft", "Microsoft 365"],
                   ["zoho", "Zoho Mail"],
+                  ["zohoEu", "Zoho Mail (Europe)"],
                   ["ovh", "OVHcloud"],
                   ["other", "Autre"],
                 ] as const
