@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, ExternalLink, Mail, MessageSquareReply, RefreshCw, Send, UserX, X } from "lucide-react";
+import { Check, Copy, ExternalLink, ImageIcon, Mail, MessageSquareReply, RefreshCw, Send, UserX, X } from "lucide-react";
 import { ContactStatusBadge, EmailBadge, ScoreBadge, signalIcon } from "./badges";
 import { Badge, Button, Input, Linkedin, Textarea } from "./ui";
 import type { Company, Contact, Message } from "@/lib/db/schema";
 
-type Detail = { contact: Contact; company: Company; messages: Message[] };
+type Detail = { contact: Contact; company: Company; messages: Message[]; sample?: { id: string; status: string } | null };
 
 const EMAIL_SOURCE: Record<string, string> = {
   published: "publiée sur le site",
@@ -194,6 +194,30 @@ export function LeadDrawer({ contactId, onClose, onChanged }: { contactId: strin
                 {c.relevanceReason && <span className="text-slate-600">🎯 {c.relevanceReason}</span>}
               </div>
             </section>
+
+            {/* Visuel offert */}
+            {data?.sample && (
+              <section className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    <ImageIcon className="size-4 text-brand-600" /> Visuel offert à {co.name}
+                  </h3>
+                  {data.sample.status === "ready" && (
+                    <a href={`/v/${data.sample.id}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:underline">
+                      Page vue par le prospect <ExternalLink className="size-3.5" />
+                    </a>
+                  )}
+                </div>
+                {data.sample.status === "ready" ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- image servie telle quelle
+                  <img src={`/v/${data.sample.id}/image`} alt={`Visuel pour ${co.name}`} className="w-full max-w-xs rounded-lg ring-1 ring-slate-200" />
+                ) : (
+                  <p className="text-sm text-slate-500">
+                    {data.sample.status === "pending" ? "Visuel en préparation…" : "Le visuel n'a pas pu être créé : l'email part sans visuel."}
+                  </p>
+                )}
+              </section>
+            )}
 
             {/* Entreprise */}
             <section className="rounded-xl border border-slate-200 bg-white p-4">

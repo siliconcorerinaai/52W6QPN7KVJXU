@@ -20,6 +20,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const user = await currentUser();
   const path = (await headers()).get("x-pathname") ?? "/";
 
+  // Page d'un visuel offert : vue par le prospect, jamais dans l'interface de l'application.
+  if (/^\/v\//.test(path)) {
+    return (
+      <html lang="fr">
+        <body>{children}</body>
+      </html>
+    );
+  }
+
   // Visiteur : pages publiques seulement (accueil, connexion, inscription), sans l'interface de l'application.
   if (!user) {
     if (!isPublicPath(path)) redirect(`/login?next=${encodeURIComponent(path)}`);

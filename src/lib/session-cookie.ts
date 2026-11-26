@@ -10,6 +10,8 @@ export const PUBLIC_PATHS = [
   /^\/api\/health$/,
   /^\/api\/unsubscribe(\/|$)/,
   /^\/api\/cron\//,
+  // Visuels offerts aux prospects (lien dans les emails).
+  /^\/v\/[\w-]+(\/image)?$/,
 ];
 
 export const isPublicPath = (pathname: string) => PUBLIC_PATHS.some((re) => re.test(pathname));

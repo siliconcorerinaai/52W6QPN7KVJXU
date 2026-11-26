@@ -29,6 +29,7 @@ import { syncAllInboxes } from "@/lib/outreach/inbox";
 import { errorMessage, hashString, isNonCompanyDomain, newId, normalizeDomain, splitName, uniq } from "@/lib/util";
 import type { ImportedCompany, PersonHint, Signal } from "@/lib/types";
 import { pushWebhook } from "./export";
+import { ensureSample, sampleUrl, withSampleLink } from "@/lib/visuals";
 
 type Handler = (job: Job) => Promise<void>;
 
@@ -265,6 +266,7 @@ async function supervise(job: Job) {
   const pendingDiscover = await pendingJobCount(campaignId, [
     "company.research",
     "company.contacts",
+    "company.visual",
     "contact.email",
     "contact.write",
     "message.send",
@@ -380,6 +382,7 @@ async function researchCompany(job: Job) {
     if (qualified) {
       await logEvent(c.id, "success", "qualify", `✅ ${a.name} qualifiée — score ${score}/100 · ${a.fitReasons[0] ?? ""}`, { companyId });
       await enqueue("company.contacts", { companyId }, { campaignId: c.id, priority: 2 });
+      if (c.settings.visualSample) await enqueue("company.visual", { companyId }, { campaignId: c.id, priority: 3 });
     } else {
       await logEvent(c.id, "info", "qualify", `✗ ${a.name} écartée (score ${score}) · ${a.disqualificationReason ?? a.fitReasons[0] ?? ""}`, {
         companyId,
@@ -630,10 +633,23 @@ async function writeContact(job: Job) {
   if (!co || !c) return;
   const db = await getDb();
 
+  // Visuel offert : prêt avant la rédaction pour que le premier email puisse le citer.
+  const sample = c.settings.visualSample ? await ensureSample(c, co) : null;
+  const link = sample ? sampleUrl(sample.id) : null;
+
   const seq = await intelligence().writeSequence(
-    { plan: c.plan, offer: c.offer, company: co, contact: ct, steps: c.settings.sequenceSteps, followUpDays: c.settings.followUpDays },
+    {
+      plan: c.plan,
+      offer: c.offer,
+      company: co,
+      contact: ct,
+      steps: c.settings.sequenceSteps,
+      followUpDays: c.settings.followUpDays,
+      sampleUrl: link,
+    },
     ctxOf(c.id),
   );
+  if (link && seq.steps[0]) seq.steps[0].body = withSampleLink(seq.steps[0].body, link);
 
   await db.delete(messages).where(and(eq(messages.contactId, contactId), inArray(messages.status, ["draft", "approved", "cancelled"])));
   for (const [i, s] of seq.steps.entries()) {
@@ -653,6 +669,17 @@ async function writeContact(job: Job) {
   }
   await db.update(contacts).set({ status: "drafted", updatedAt: new Date() }).where(eq(contacts.id, contactId));
   await logEvent(c.id, "info", "write", `✍️ Séquence de ${seq.steps.length} emails rédigée pour ${ct.fullName} (${co.name})`, { contactId });
+}
+
+// ───────────────────────────── Visuel offert ─────────────────────────────
+
+async function visualForCompany(job: Job) {
+  const companyId = job.payload.companyId as string;
+  const co = await loadCompany(companyId);
+  if (!co || co.status !== "qualified") return;
+  const c = await loadCampaign(co.campaignId);
+  if (!c || !c.settings.visualSample) return;
+  await ensureSample(c, co);
 }
 
 // ───────────────────────────── Envoi ─────────────────────────────
@@ -788,6 +815,7 @@ const HANDLERS: Record<JobType, Handler> = {
   "company.contacts": findContacts,
   "contact.email": findEmail,
   "contact.write": writeContact,
+  "company.visual": visualForCompany,
   "message.send": sendMessage,
   "mailbox.sync": syncInboxes,
 };

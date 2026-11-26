@@ -38,6 +38,7 @@ const STEP_LABEL: Record<string, string> = {
   "campaign.discover": "la recherche d'entreprises",
   "company.research": "l'analyse d'une entreprise",
   "company.contacts": "la recherche de décideurs",
+  "company.visual": "la création d'un visuel offert",
   "contact.email": "la recherche d'un email",
   "contact.write": "la rédaction d'une séquence",
   "message.send": "l'envoi d'un email",

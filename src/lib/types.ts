@@ -55,6 +55,10 @@ export const CampaignSettingsSchema = z.object({
   importCursor: z.number().int().min(0).optional(),
   /** true : ne prospecter que les entreprises importées (pas de recherche d'entreprises similaires). */
   importOnly: z.boolean().optional(),
+  /** Offrir à chaque entreprise qualifiée un visuel promo à son image, cité dans le premier email. */
+  visualSample: z.boolean().optional(),
+  /** Ce que doit montrer le visuel (ex. « affiche promo pour Instagram »). */
+  visualBrief: z.string().max(500).optional(),
 });
 export type CampaignSettings = z.infer<typeof CampaignSettingsSchema>;
 
