@@ -402,7 +402,8 @@ ${PLAN_RULES}`,
         system: `${RESEARCHER}
 Tu lis une page qui liste des entreprises ou organisations (annuaire, exposants d'un salon, classement, membres d'une
 association, partenaires, références clients…). Extrais toutes les entreprises listées (150 au maximum), dans l'ordre
-de la page. Ignore la navigation, les réseaux sociaux, les médias et l'éditeur de la page lui-même.
+de la page. Ignore la navigation, les réseaux sociaux, les médias, l'éditeur de la page lui-même, et les entreprises
+disparues, fermées ou absorbées (on ne peut plus les prospecter).
 Domaine : prends-le dans les liens de la page quand il correspond à l'entreprise ; sinon mets-le seulement si tu le
 connais avec certitude ; sinon null.
 Pays choisi : ${country}. Pour chaque entreprise, indique si elle se trouve dans ce pays (inTargetCountry).`,
