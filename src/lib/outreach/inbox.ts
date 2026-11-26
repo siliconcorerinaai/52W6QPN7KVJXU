@@ -5,7 +5,7 @@
  * - Réponses automatiques (absence, congés) → ignorées : les relances continuent.
  */
 import { ImapFlow } from "imapflow";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { contacts, messages, users } from "@/lib/db/schema";
 import { campaignIdsOf, PLATFORM, type Owner } from "@/lib/ownership";
@@ -22,7 +22,12 @@ export type InboundMessage = {
   body?: string;
 };
 
-export type Classification = { kind: "reply" | "bounce" | "auto" | "other"; bounced: string[] };
+export type Classification = {
+  kind: "reply" | "bounce" | "auto" | "other";
+  bounced: string[];
+  /** Identifiants (Message-ID) cités dans un rapport de non-remise : ceux des emails en échec. */
+  messageIds?: string[];
+};
 
 const BOUNCE_SENDER = /^(mailer-daemon|postmaster|mail-daemon|bounce[s]?|noreply-dmarc)[@+]/i;
 const BOUNCE_SUBJECT =
@@ -31,6 +36,32 @@ const AUTO_SUBJECT =
   /^(r[ée]ponse automatique|automatic reply|auto(matic)?[ -]?reply|autoreply|out of (the )?office|absent|absence|en cong[ée]s?|abwesenheit|fuera de la oficina)/i;
 const AUTO_HEADERS = /^(auto-submitted:\s*auto-(replied|generated)|x-autoreply:|x-autorespond:|precedence:\s*(auto_reply|bulk|junk))/im;
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
+const MESSAGE_ID_RE = /<[^<>\s"]+@[^<>\s"]+>/g;
+/**
+ * Échec définitif, ou seulement temporaire (le serveur réessaie). Cherché dans le texte du rapport
+ * uniquement (pas dans les en-têtes, où des adresses IP ressemblent à des codes).
+ */
+const PERMANENT = /permanent|^action:\s*failed|error code\s*:?\s*5\d\d|\b5\d\d[ -]+5\.\d{1,3}\.\d{1,3}\b/im;
+const TEMPORARY = /^action:\s*delayed|\bdelayed\b|temporar(?:y|ily)\s+(?:failure|error|problem|unavailable)|will (?:be )?retr|still trying/im;
+
+/**
+ * Texte lisible d'un message brut : les parties encodées (base64, quoted-printable) sont décodées,
+ * car beaucoup de rapports de non-remise (Zoho, Outlook…) encodent l'adresse en échec.
+ */
+export function readableText(raw: string): string {
+  const out = [raw];
+  for (const m of raw.matchAll(/content-transfer-encoding:\s*base64[^\n]*\n(?:[^\n]*\S[^\n]*\n)*?\r?\n([A-Za-z0-9+/=\r\n]+)/gi)) {
+    try {
+      out.push(Buffer.from(m[1].replace(/\s+/g, ""), "base64").toString("utf8"));
+    } catch {
+      /* partie illisible */
+    }
+  }
+  if (/quoted-printable/i.test(raw)) {
+    out.push(raw.replace(/=\r?\n/g, "").replace(/=([0-9A-F]{2})/gi, (_, h: string) => String.fromCharCode(parseInt(h, 16))));
+  }
+  return out.join("\n");
+}
 
 /** Classe un message entrant (fonction pure, testée). */
 export function classifyInbound(m: InboundMessage, ownAddresses: string[] = []): Classification {
@@ -38,12 +69,16 @@ export function classifyInbound(m: InboundMessage, ownAddresses: string[] = []):
   const subject = m.subject ?? "";
   if (ownAddresses.some((a) => a.toLowerCase() === from)) return { kind: "other", bounced: [] };
   if (BOUNCE_SENDER.test(from) || BOUNCE_SUBJECT.test(subject)) {
-    const text = `${m.headers ?? ""}\n${m.body ?? ""}`;
+    const body = readableText(m.body ?? "");
+    const text = `${m.headers ?? ""}\n${body}`;
+    // Simple retard de remise : le serveur réessaie, ce n'est pas (encore) un rebond.
+    if (body && TEMPORARY.test(body) && !PERMANENT.test(body)) return { kind: "auto", bounced: [] };
     const explicit = [...text.matchAll(/(?:final|original)-recipient:\s*rfc822;\s*<?([^\s>;]+)/gi)].map((x) => x[1].toLowerCase());
     const fallback = explicit.length ? [] : (text.match(EMAIL_RE) ?? []).map((e) => e.toLowerCase());
     const own = new Set(ownAddresses.map((a) => a.toLowerCase()));
     const bounced = [...new Set([...explicit, ...fallback])].filter((e) => !own.has(e) && !BOUNCE_SENDER.test(e));
-    return { kind: "bounce", bounced };
+    const messageIds = [...new Set(text.match(MESSAGE_ID_RE) ?? [])];
+    return { kind: "bounce", bounced, messageIds };
   }
   if (AUTO_SUBJECT.test(subject.trim()) || AUTO_HEADERS.test(m.headers ?? "")) return { kind: "auto", bounced: [] };
   return { kind: "reply", bounced: [] };
@@ -128,11 +163,19 @@ export async function applyInbound(items: InboundMessage[], ownAddresses: string
         await markReplied(ct.id, ct.campaignId, ct.fullName, item.subject);
         replies++;
       }
-    } else if (c.kind === "bounce" && c.bounced.length) {
+    } else if (c.kind === "bounce" && (c.bounced.length || c.messageIds?.length)) {
+      // L'email en échec, retrouvé par son identifiant (sûr), sinon par l'adresse citée dans le rapport.
+      const byId = c.messageIds?.length
+        ? (await db.select({ contactId: messages.contactId }).from(messages).where(inArray(messages.providerId, c.messageIds))).map((r) => r.contactId)
+        : [];
+      const match = [
+        byId.length ? inArray(contacts.id, byId) : undefined,
+        c.bounced.length ? inArray(contacts.email, c.bounced) : undefined,
+      ].filter((x) => x !== undefined);
       const rows = await db
         .select()
         .from(contacts)
-        .where(and(inArray(contacts.email, c.bounced), inArray(contacts.status, [...active]), inScope));
+        .where(and(or(...match), inArray(contacts.status, [...active]), inScope));
       for (const ct of rows) {
         await db.update(contacts).set({ status: "bounced", emailStatus: "invalid", updatedAt: new Date() }).where(eq(contacts.id, ct.id));
         await db
