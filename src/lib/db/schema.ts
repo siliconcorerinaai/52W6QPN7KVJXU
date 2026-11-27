@@ -90,6 +90,11 @@ export const companies = prospecta.table(
     location: text(),
     country: text(),
     linkedinUrl: text(),
+    /** Page Facebook de l'entreprise (repérée sur son site ou saisie à la main) */
+    facebookUrl: text(),
+    instagramUrl: text(),
+    /** Date de la dernière recherche de ses réseaux sociaux (pour ne pas la refaire) */
+    socialsCheckedAt: timestamp({ withTimezone: true }),
     techStack: jsonb().$type<string[]>().notNull().default([]),
     signals: jsonb().$type<Signal[]>().notNull().default([]),
     score: integer(),
@@ -216,6 +221,33 @@ export const sampleVideos = prospecta.table("sample_videos", {
   updatedAt: now(),
 });
 export type SampleVideo = typeof sampleVideos.$inferSelect;
+
+export type SocialStatus = "todo" | "sent" | "replied" | "skipped";
+
+/**
+ * Message préparé pour la page Facebook d'une entreprise (assistant Facebook) : l'utilisateur l'envoie
+ * lui-même depuis Messenger, puis indique s'il est parti et si l'entreprise a répondu.
+ */
+export const socialMessages = prospecta.table(
+  "social_messages",
+  {
+    id: text().primaryKey(),
+    campaignId: text()
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    companyId: text()
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    channel: text().$type<"facebook">().notNull().default("facebook"),
+    message: text().notNull(),
+    status: text().$type<SocialStatus>().notNull().default("todo"),
+    sentAt: timestamp({ withTimezone: true }),
+    createdAt: now(),
+    updatedAt: now(),
+  },
+  (t) => [uniqueIndex("social_messages_company").on(t.companyId, t.channel), index("social_messages_campaign").on(t.campaignId)],
+);
+export type SocialMessage = typeof socialMessages.$inferSelect;
 
 export const contacts = prospecta.table(
   "contacts",

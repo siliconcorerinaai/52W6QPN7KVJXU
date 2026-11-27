@@ -33,6 +33,8 @@ import type { ImportedCompany, PersonHint, Signal } from "@/lib/types";
 import { pushWebhook } from "./export";
 import { ensureSample, sampleUrl, withSampleLink } from "@/lib/visuals";
 import { pollSampleVideo, startSampleVideo, videoEnabled, videoGate, videoOf } from "@/lib/videos";
+import { facebookPageFrom, instagramFrom } from "@/lib/social";
+import { findCompanySocials, writeSocialMessage } from "./social";
 import { triageReply } from "./replies";
 import { checkBounceBreaker, gateFirstEmail } from "./safety";
 
@@ -273,6 +275,8 @@ async function supervise(job: Job) {
     "company.contacts",
     "company.visual",
     "sample.video",
+    "company.socials",
+    "social.write",
     "reply.triage",
     "contact.email",
     "contact.write",
@@ -372,6 +376,9 @@ async function researchCompany(job: Job) {
         country: a.country,
         language: digest?.language?.slice(0, 2) || a.language,
         linkedinUrl: digest?.linkedinUrl ?? a.linkedinUrl,
+        facebookUrl: (digest && facebookPageFrom(digest.socials)) || co.facebookUrl,
+        instagramUrl: (digest && instagramFrom(digest.socials)) || co.instagramUrl,
+        socialsCheckedAt: digest ? new Date() : co.socialsCheckedAt,
         techStack: digest?.techStack ?? (config.demoMode ? demoTech(co.domain) : []),
         signals: a.signals.map((s) => ({ type: s.type, text: s.text, source: s.source ?? undefined, date: s.date ?? undefined })),
         score,
@@ -884,6 +891,8 @@ const HANDLERS: Record<JobType, Handler> = {
   "mailbox.sync": syncInboxes,
   "reply.triage": (job) => triageReply(job.payload.replyId as string),
   "sample.video": pollSampleVideo,
+  "company.socials": (job) => findCompanySocials(job.payload.companyId as string),
+  "social.write": (job) => writeSocialMessage(job.payload.companyId as string),
 };
 
 export async function runJob(job: Job) {

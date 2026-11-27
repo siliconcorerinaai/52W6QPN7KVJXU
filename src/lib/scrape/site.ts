@@ -176,7 +176,8 @@ export async function crawlCompanySite(domainOrUrl: string, maxPages = 6): Promi
     try {
       const u = new URL(href, base);
       if (/linkedin\.com|twitter\.com|x\.com|facebook\.com|instagram\.com|youtube\.com|welcometothejungle/i.test(u.hostname)) {
-        socials.push(u.href.split("?")[0]);
+        // facebook.com/profile.php?id=… : l'identifiant de la page est dans la requête
+        socials.push(/profile\.php$/i.test(u.pathname) ? u.href : u.href.split("?")[0]);
       } else if (normalizeDomain(u.hostname) === normalizeDomain(base.hostname)) {
         links.push(u.origin + u.pathname);
       }

@@ -14,6 +14,8 @@ import {
   SequenceSchema,
   TargetSiteSchema,
   TriageSchema,
+  SocialMessageSchema,
+  AdCopySchema,
   type PlanResponse,
 } from "./schemas";
 import type { Intelligence, LinkResult } from "./intelligence";
@@ -542,6 +544,63 @@ FIL DE LA CONVERSATION
 ${history}
 
 Dernière réponse du prospect à traiter : « ${last?.subject ?? ""} ».`,
+    });
+  }
+
+  async writeSocialMessage(input: Parameters<Intelligence["writeSocialMessage"]>[0], ctx: Parameters<Intelligence["writeSocialMessage"]>[1]) {
+    const { offer, company, contact, sampleUrl, sampleVideo, emailSent } = input;
+    const language = offer.language && offer.language !== "auto" ? offer.language : company.language || "fr";
+    const signals = company.signals.map((s) => `- ${s.text}`).join("\n");
+    const res = await structured({
+      operation: "social.write",
+      ctx,
+      effort: "low",
+      schema: SocialMessageSchema,
+      system: `Tu écris le premier message Messenger qu'un professionnel envoie lui-même à la page Facebook d'une entreprise locale.
+Règles :
+- Langue « ${language} » (vouvoiement en français), ton chaleureux et direct, comme un message entre commerçants. Texte brut.
+- 250 à 450 caractères. Pas d'objet, pas de formule commerciale lourde, au plus un emoji.
+- Commence par le prénom du décideur s'il est connu, sinon par une salutation simple adressée à l'équipe.
+- Une phrase précise et vraie sur l'entreprise (tirée de la recherche), jamais de flatterie générique.
+- Si un visuel offert est indiqué : dis que tu as préparé gratuitement un visuel à leur image${sampleVideo ? " et sa version vidéo pour leurs Reels" : ""}, et mets son lien tel quel, seul sur sa ligne.
+- Si un email a déjà été envoyé : glisse en une demi-phrase que tu leur as aussi écrit par email.
+- Termine par une seule question simple (ex. : « Ça vous plairait d'en avoir d'autres comme ça ? »).
+- Signe avec le prénom de l'expéditeur et le nom de son entreprise. N'invente aucun chiffre, client ou fait.`,
+      prompt: `EXPÉDITEUR : ${offer.senderName || "—"} (${offer.senderCompany || "—"})
+Offre : ${offer.product || "—"} — ${offer.valueProposition || ""}
+Visuel offert : ${sampleUrl || "aucun"}
+Email déjà envoyé : ${emailSent ? "oui" : "non"}
+
+ENTREPRISE : ${company.name} (${company.domain}) — ${company.industry ?? "?"}, ${company.location ?? "?"}
+${company.description ?? ""}
+Signaux :\n${signals || "aucun"}
+Décideur connu : ${contact ? `${contact.fullName} (${contact.title ?? "?"})` : "aucun"}`,
+    });
+    if (sampleUrl && !res.message.includes(sampleUrl)) res.message = `${res.message.trim()}\n\n${sampleUrl}`;
+    return res;
+  }
+
+  async writeAdCopy(input: Parameters<Intelligence["writeAdCopy"]>[0], ctx: Parameters<Intelligence["writeAdCopy"]>[1]) {
+    const { offer, plan, language } = input;
+    return structured({
+      operation: "ads.copy",
+      ctx,
+      effort: "low",
+      schema: AdCopySchema,
+      system: `Tu écris des publicités Facebook et Instagram B2B qui convertissent, pour une audience de prospects déjà identifiés
+(des entreprises qui reçoivent aussi nos emails). Langue « ${language} ». Règles :
+- Parle au gérant de l'entreprise, de son problème concret, avec un bénéfice clair et une preuve tirée de l'offre.
+- 3 textes principaux d'angles différents (bénéfice, curiosité, offre gratuite), 125 à 300 caractères, au plus deux emojis.
+- 3 titres de 40 caractères au plus, 2 descriptions de 30 caractères au plus.
+- Aucun chiffre, client ou résultat qui ne figure pas dans l'offre. Pas de promesse trompeuse.
+- Respecte les règles publicitaires de Meta : ne fais pas allusion aux caractéristiques personnelles du lecteur.`,
+      prompt: `Offre : ${offer.product || "—"}
+Proposition de valeur : ${offer.valueProposition || "—"}
+Tarifs : ${offer.pricing?.trim() || "non indiqués"}
+Expéditeur : ${offer.senderCompany || offer.senderName || "—"}
+Cible : ${plan.summary}
+Secteurs : ${plan.industries.join(", ")}
+Zones : ${plan.geographies.join(", ")}`,
     });
   }
 }

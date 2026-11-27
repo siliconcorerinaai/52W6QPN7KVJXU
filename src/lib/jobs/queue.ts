@@ -13,6 +13,8 @@ export type JobType =
   | "mailbox.sync"
   | "reply.triage"
   | "sample.video"
+  | "company.socials"
+  | "social.write"
   | "campaign.supervise";
 
 export type EnqueueOptions = {

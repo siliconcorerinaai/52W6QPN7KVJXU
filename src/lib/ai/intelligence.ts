@@ -1,5 +1,5 @@
 import type { AiContext } from "./usage";
-import type { PlanResponse, Analysis, PeopleResult, Sequence, Triage } from "./schemas";
+import type { PlanResponse, Analysis, PeopleResult, Sequence, Triage, SocialMessage, AdCopy } from "./schemas";
 import type { CampaignOffer, CampaignPlan, CompanyCandidate, ImportedCompany, LinkKind } from "@/lib/types";
 import type { SiteDigest } from "@/lib/scrape/site";
 import type { LinkPage } from "@/lib/scrape/link";
@@ -39,6 +39,20 @@ export type WriteInput = {
 };
 
 export type VisualInput = { company: Company; offer: CampaignOffer; brief: string };
+
+/** Premier message à la page Facebook d'une entreprise (envoyé à la main par l'utilisateur). */
+export type SocialMessageInput = {
+  offer: CampaignOffer;
+  company: Company;
+  /** Le décideur connu (pour saluer par son prénom), s'il y en a un */
+  contact: Pick<Contact, "fullName" | "title"> | null;
+  sampleUrl: string | null;
+  sampleVideo: boolean;
+  /** Un email lui a déjà été envoyé (le message peut y faire allusion) */
+  emailSent: boolean;
+};
+
+export type AdCopyInput = { offer: CampaignOffer; plan: CampaignPlan; language: string };
 
 /** Un message du fil avec un prospect (nos emails et ses réponses), du plus ancien au plus récent. */
 export type ThreadItem = { from: "us" | "prospect"; subject: string; body: string; at: Date };
@@ -88,6 +102,10 @@ export interface Intelligence {
   triageReply(input: TriageInput, ctx: AiContext): Promise<Triage>;
   /** Génère le visuel promo offert à une entreprise (à son image). */
   generateVisual(input: VisualInput, ctx: AiContext): Promise<{ mime: string; data: Buffer; prompt: string }>;
+  /** Rédige le premier message Messenger pour la page Facebook d'une entreprise. */
+  writeSocialMessage(input: SocialMessageInput, ctx: AiContext): Promise<SocialMessage>;
+  /** Rédige les textes d'une publicité Facebook / Instagram pour l'offre. */
+  writeAdCopy(input: AdCopyInput, ctx: AiContext): Promise<AdCopy>;
   /** Retrouve le site officiel d'entreprises connues seulement par leur nom. */
   resolveDomains(input: ResolveInput, ctx: AiContext): Promise<{ name: string; domain: string | null }[]>;
 }
