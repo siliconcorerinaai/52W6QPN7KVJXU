@@ -32,6 +32,7 @@ import { errorMessage, hashString, isNonCompanyDomain, newId, normalizeDomain, s
 import type { ImportedCompany, PersonHint, Signal } from "@/lib/types";
 import { pushWebhook } from "./export";
 import { ensureSample, sampleUrl, withSampleLink } from "@/lib/visuals";
+import { triageReply } from "./replies";
 
 type Handler = (job: Job) => Promise<void>;
 
@@ -269,6 +270,7 @@ async function supervise(job: Job) {
     "company.research",
     "company.contacts",
     "company.visual",
+    "reply.triage",
     "contact.email",
     "contact.write",
     "message.send",
@@ -849,6 +851,7 @@ const HANDLERS: Record<JobType, Handler> = {
   "company.visual": visualForCompany,
   "message.send": sendMessage,
   "mailbox.sync": syncInboxes,
+  "reply.triage": (job) => triageReply(job.payload.replyId as string),
 };
 
 export async function runJob(job: Job) {

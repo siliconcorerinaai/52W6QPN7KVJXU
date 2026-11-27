@@ -21,6 +21,8 @@ export const CampaignOfferSchema = z.object({
   product: z.string().default(""),
   valueProposition: z.string().default(""),
   callToAction: z.string().default("un échange de 15 minutes"),
+  /** Tarifs et conditions, pour que l'IA réponde aux questions de prix sans rien inventer. */
+  pricing: z.string().max(2000).optional(),
   bookingUrl: z.string().default(""),
   tone: z.string().default("professionnel et chaleureux"),
   language: z.string().default("auto"),

@@ -5,12 +5,14 @@
  * - Réponses automatiques (absence, congés) → ignorées : les relances continuent.
  */
 import { ImapFlow } from "imapflow";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { contacts, messages, users } from "@/lib/db/schema";
+import { contacts, messages, replies, users, type Contact } from "@/lib/db/schema";
+import { enqueue } from "@/lib/jobs/queue";
+import { parseReply } from "./reply-text";
 import { campaignIdsOf, PLATFORM, type Owner } from "@/lib/ownership";
 import { logEvent } from "@/lib/events";
-import { errorMessage } from "@/lib/util";
+import { errorMessage, hashString, newId } from "@/lib/util";
 import { listMailboxes, recordSync, type SendingMailbox } from "./mailboxes";
 
 export type InboundMessage = {
@@ -18,7 +20,11 @@ export type InboundMessage = {
   from: string;
   subject: string;
   inReplyTo?: string | null;
+  /** Message-ID de l'email reçu (identifiant de la réponse, pour ne pas la stocker deux fois). */
+  messageId?: string | null;
+  date?: Date | null;
   headers?: string;
+  /** Source brute (MIME) : rapports de non-remise et réponses des prospects. */
   body?: string;
 };
 
@@ -86,7 +92,15 @@ export function classifyInbound(m: InboundMessage, ownAddresses: string[] = []):
 
 type SyncResult = { scanned: number; replies: number; bounces: number };
 
-async function fetchRecent(mb: SendingMailbox, since: Date): Promise<InboundMessage[]> {
+/**
+ * Lit les messages récents. Le contenu complet n'est téléchargé que pour les rapports de non-remise
+ * et pour les réponses que `wantBody` désigne (prospects connus, pas encore enregistrées).
+ */
+async function fetchRecent(
+  mb: SendingMailbox,
+  since: Date,
+  wantBody: (items: InboundMessage[]) => Promise<Set<number>> = async () => new Set(),
+): Promise<InboundMessage[]> {
   const imap = mb.imap!;
   const client = new ImapFlow({
     host: imap.host,
@@ -112,14 +126,17 @@ async function fetchRecent(mb: SendingMailbox, since: Date): Promise<InboundMess
             from,
             subject,
             inReplyTo: msg.envelope?.inReplyTo ?? null,
+            messageId: msg.envelope?.messageId ?? null,
+            date: msg.envelope?.date ? new Date(msg.envelope.date) : null,
             headers: msg.headers?.toString("utf8"),
           };
           out.push(item);
         }
-        // Corps des rapports de non-remise (pour retrouver l'adresse en échec)
+        // Contenu complet : rapports de non-remise (adresse en échec) et nouvelles réponses de prospects
+        const replyUids = await wantBody(out);
         for (const item of out) {
-          if (classifyInbound(item).kind !== "bounce") continue;
-          const full = await client.fetchOne(String(item.uid), { source: { start: 0, maxLength: 60_000 } }, { uid: true });
+          if (classifyInbound(item).kind !== "bounce" && !replyUids.has(item.uid)) continue;
+          const full = await client.fetchOne(String(item.uid), { source: { start: 0, maxLength: 200_000 } }, { uid: true });
           if (full && full.source) item.body = full.source.toString("utf8");
         }
       }
@@ -146,23 +163,13 @@ export async function applyInbound(items: InboundMessage[], ownAddresses: string
   for (const item of items) {
     const c = classifyInbound(item, ownAddresses);
     if (c.kind === "reply") {
-      // Par l'en-tête In-Reply-To (fiable), sinon par l'adresse de l'expéditeur
-      let contactId: string | undefined;
-      if (item.inReplyTo) {
-        const [m] = await db.select({ contactId: messages.contactId }).from(messages).where(eq(messages.providerId, item.inReplyTo));
-        contactId = m?.contactId;
-      }
-      const rows = contactId
-        ? await db.select().from(contacts).where(and(eq(contacts.id, contactId), inScope))
-        : await db
-            .select()
-            .from(contacts)
-            .where(and(eq(contacts.email, item.from.toLowerCase()), inArray(contacts.status, [...active]), inScope));
-      for (const ct of rows) {
-        if (!["sent", "approved", "drafted"].includes(ct.status)) continue;
+      const ct = await contactForReply(item, inScope);
+      if (!ct) continue;
+      if ((active as readonly string[]).includes(ct.status)) {
         await markReplied(ct.id, ct.campaignId, ct.fullName, item.subject);
         replies++;
       }
+      await storeReply(item, ct);
     } else if (c.kind === "bounce" && (c.bounced.length || c.messageIds?.length)) {
       // L'email en échec, retrouvé par son identifiant (sûr), sinon par l'adresse citée dans le rapport.
       const byId = c.messageIds?.length
@@ -190,6 +197,84 @@ export async function applyInbound(items: InboundMessage[], ownAddresses: string
     }
   }
   return { replies, bounces };
+}
+
+/**
+ * Le prospect qui répond : par l'en-tête In-Reply-To (nos emails de séquence, ou nos réponses
+ * envoyées depuis la boîte de réception), sinon par son adresse (le plus récent).
+ */
+async function contactForReply(item: InboundMessage, inScope: SQL): Promise<Contact | null> {
+  const db = await getDb();
+  if (item.inReplyTo) {
+    const [m] = await db.select({ contactId: messages.contactId }).from(messages).where(eq(messages.providerId, item.inReplyTo));
+    const [r] = m ? [undefined] : await db.select({ contactId: replies.contactId }).from(replies).where(eq(replies.messageId, item.inReplyTo));
+    const id = m?.contactId ?? r?.contactId;
+    if (id) {
+      const [ct] = await db.select().from(contacts).where(and(eq(contacts.id, id), inScope));
+      if (ct) return ct;
+    }
+  }
+  const [ct] = await db
+    .select()
+    .from(contacts)
+    .where(and(eq(contacts.email, item.from.toLowerCase()), notInArray(contacts.status, ["bounced"]), inScope))
+    .orderBy(desc(contacts.updatedAt))
+    .limit(1);
+  return ct ?? null;
+}
+
+/** Identifiant stable d'une réponse : son Message-ID, sinon une empreinte (pour rester idempotent). */
+function replyKey(item: InboundMessage): string {
+  if (item.messageId) return item.messageId;
+  return `<sans-id-${hashString(`${item.from}|${item.subject}|${item.date?.toISOString() ?? ""}`)}@ciblora>`;
+}
+
+/** Enregistre la réponse (texte lisible) et demande à l'IA de la classer et de préparer un brouillon. */
+async function storeReply(item: InboundMessage, ct: Contact) {
+  const db = await getDb();
+  const parsed = item.body ? await parseReply(item.body).catch(() => null) : null;
+  const [row] = await db
+    .insert(replies)
+    .values({
+      id: newId(),
+      campaignId: ct.campaignId,
+      contactId: ct.id,
+      direction: "in",
+      messageId: item.messageId ?? parsed?.messageId ?? replyKey(item),
+      inReplyTo: item.inReplyTo ?? parsed?.inReplyTo ?? null,
+      fromEmail: item.from.toLowerCase(),
+      subject: item.subject ?? "",
+      body: parsed?.text ?? "",
+      receivedAt: item.date ?? parsed?.date ?? new Date(),
+    })
+    .onConflictDoNothing()
+    .returning({ id: replies.id });
+  if (row) await enqueue("reply.triage", { replyId: row.id }, { campaignId: ct.campaignId, priority: 1 });
+}
+
+/** Parmi les messages reçus, les réponses de prospects connus pas encore enregistrées (à télécharger). */
+export async function newProspectReplies(items: InboundMessage[], own: string[]): Promise<Set<number>> {
+  const candidates = items.filter((i) => classifyInbound(i, own).kind === "reply");
+  if (!candidates.length) return new Set();
+  const db = await getDb();
+  const froms = [...new Set(candidates.map((i) => i.from.toLowerCase()))];
+  const threads = [...new Set(candidates.map((i) => i.inReplyTo).filter((x): x is string => !!x))];
+  const knownFrom = new Set((await db.select({ email: contacts.email }).from(contacts).where(inArray(contacts.email, froms))).map((r) => r.email));
+  const knownThread = threads.length
+    ? new Set(
+        [
+          ...(await db.select({ id: messages.providerId }).from(messages).where(inArray(messages.providerId, threads))),
+          ...(await db.select({ id: replies.messageId }).from(replies).where(inArray(replies.messageId, threads))),
+        ].map((r) => r.id),
+      )
+    : new Set<string | null>();
+  const keys = candidates.map(replyKey);
+  const stored = new Set((await db.select({ m: replies.messageId }).from(replies).where(inArray(replies.messageId, keys))).map((r) => r.m));
+  return new Set(
+    candidates
+      .filter((i) => (knownFrom.has(i.from.toLowerCase()) || (i.inReplyTo && knownThread.has(i.inReplyTo))) && !stored.has(replyKey(i)))
+      .map((i) => i.uid),
+  );
 }
 
 async function markReplied(contactId: string, campaignId: string, name: string, subject: string) {
@@ -221,7 +306,7 @@ export async function syncAllInboxes(): Promise<SyncResult & { mailboxes: number
     try {
       // IMAP filtre au jour près : on relit les 3 derniers jours (le traitement est idempotent)
       const since = new Date(Date.now() - 3 * 86_400_000);
-      const items = await fetchRecent(mb, since);
+      const items = await fetchRecent(mb, since, (found) => newProspectReplies(found, own));
       const r = await applyInbound(items, own, await mailboxOwner(mb));
       total.scanned += items.length;
       total.replies += r.replies;

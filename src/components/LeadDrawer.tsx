@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, ExternalLink, ImageIcon, Mail, MessageSquareReply, RefreshCw, Send, UserX, X } from "lucide-react";
+import { Check, Copy, ExternalLink, ImageIcon, Mail, MessageSquareReply, RefreshCw, RotateCcw, Send, UserX, X } from "lucide-react";
 import { ContactStatusBadge, EmailBadge, ScoreBadge, signalIcon } from "./badges";
 import { Badge, Button, Input, Linkedin, Textarea } from "./ui";
 import type { Company, Contact, Message } from "@/lib/db/schema";
@@ -316,6 +316,11 @@ export function LeadDrawer({ contactId, onClose, onChanged }: { contactId: strin
               {c.status !== "replied" && (
                 <Button size="sm" variant="secondary" loading={busy === "replied"} onClick={() => act("replied", patch({ status: "replied" }))} icon={<MessageSquareReply className="size-3.5" />}>
                   A répondu (stoppe les relances)
+                </Button>
+              )}
+              {c.status === "replied" && (
+                <Button size="sm" variant="secondary" loading={busy === "resume"} onClick={() => act("resume", patch({ resume: true }))} icon={<RotateCcw className="size-3.5" />}>
+                  Reprendre les relances
                 </Button>
               )}
               {c.status !== "unsubscribed" && (

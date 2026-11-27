@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { BRAND } from "@/lib/brand";
-import { LayoutDashboard, LogOut, Plus, Settings, ShieldCheck, Target, Radar } from "lucide-react";
+import { Inbox, LayoutDashboard, LogOut, Plus, Settings, ShieldCheck, Target, Radar } from "lucide-react";
 
 const NAV = [
   { href: "/", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/campaigns", label: "Campagnes", icon: Target },
+  { href: "/inbox", label: "Réponses", icon: Inbox },
   { href: "/settings", label: "Paramètres", icon: Settings },
 ];
 const ADMIN_NAV = { href: "/admin", label: "Administration", icon: ShieldCheck };
@@ -21,6 +23,7 @@ async function logout() {
 export function Sidebar({ demo, admin, account }: { demo: boolean; admin: boolean; account: { email: string; name: string } }) {
   const path = usePathname();
   const nav = admin ? [...NAV, ADMIN_NAV] : NAV;
+  const toHandle = useRepliesToHandle(path);
   return (
     <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -53,6 +56,9 @@ export function Sidebar({ demo, admin, account }: { demo: boolean; admin: boolea
               >
                 <Icon className="size-4" />
                 {label}
+                {href === "/inbox" && toHandle > 0 && (
+                  <span className="ml-auto rounded-full bg-brand-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white">{toHandle}</span>
+                )}
               </Link>
             );
           })}
@@ -84,7 +90,31 @@ export function Sidebar({ demo, admin, account }: { demo: boolean; admin: boolea
   );
 }
 
+/** Nombre de réponses de prospects à traiter (rafraîchi chaque minute et à chaque changement de page). */
+function useRepliesToHandle(path: string) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let stop = false;
+    const load = () =>
+      fetch("/api/replies/count")
+        .then((r) => (r.ok ? r.json() : { count: 0 }))
+        .then((j) => !stop && setN(j.count ?? 0))
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 60_000);
+    // La page Réponses prévient quand une réponse change d'état (envoyée, traitée…).
+    window.addEventListener("replies:changed", load);
+    return () => {
+      stop = true;
+      clearInterval(t);
+      window.removeEventListener("replies:changed", load);
+    };
+  }, [path]);
+  return n;
+}
+
 export function MobileNav({ admin }: { admin: boolean }) {
+  const toHandle = useRepliesToHandle(usePathname());
   return (
     <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 md:hidden">
       <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold">
@@ -93,6 +123,10 @@ export function MobileNav({ admin }: { admin: boolean }) {
       <div className="flex items-center gap-1 text-sm">
         <Link href="/campaigns" className="rounded-md p-2 text-slate-600 hover:bg-slate-100" aria-label="Campagnes">
           <Target className="size-4" />
+        </Link>
+        <Link href="/inbox" className="relative rounded-md p-2 text-slate-600 hover:bg-slate-100" aria-label="Réponses">
+          <Inbox className="size-4" />
+          {toHandle > 0 && <span className="absolute right-0.5 top-0.5 size-2 rounded-full bg-brand-600" />}
         </Link>
         <Link href="/settings" className="rounded-md p-2 text-slate-600 hover:bg-slate-100" aria-label="Paramètres">
           <Settings className="size-4" />

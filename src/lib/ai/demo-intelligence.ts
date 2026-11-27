@@ -201,4 +201,34 @@ export class DemoIntelligence implements Intelligence {
 </svg>`;
     return { mime: "image/svg+xml", data: Buffer.from(svg), prompt: `Démo — ${brief}` };
   }
+
+  async triageReply({ thread, contact, offer }: Parameters<Intelligence["triageReply"]>[0]) {
+    await sleep(200);
+    const last = [...thread].reverse().find((t) => t.from === "prospect");
+    const text = `${last?.subject ?? ""}\n${last?.body ?? ""}`.toLowerCase();
+    const category = /unsubscribe|remove me|désinscri|ne plus (me )?contacter|stop/.test(text)
+      ? "unsubscribe"
+      : /out of office|absent|automatic reply|réponse automatique/.test(text)
+        ? "auto"
+        : /not interested|pas intéress|no thanks|non merci/.test(text)
+          ? "not_interested"
+          : /\?|how much|price|combien|tarif|prix/.test(text)
+            ? "question"
+            : /later|plus tard|next (month|year)|pas maintenant/.test(text)
+              ? "not_now"
+              : /yes|interested|intéress|sounds good|d'accord|ok\b/.test(text)
+                ? "interested"
+                : "other";
+    const needsReply = category !== "unsubscribe" && category !== "auto";
+    const first = splitName(contact.fullName).first;
+    return {
+      category,
+      summary: `${contact.fullName} : ${(last?.body ?? "").split("\n")[0].slice(0, 120)}`,
+      needsReply,
+      subject: `Re: ${(last?.subject ?? "").replace(/^re:\s*/i, "")}`,
+      body: needsReply
+        ? `Bonjour ${first},\n\nMerci pour votre retour. ${offer.pricing ? `Nos tarifs : ${offer.pricing}.` : "Je vous propose un court échange pour en parler."}\n\nBien à vous,\n${offer.senderName || "—"}\n${offer.senderCompany || ""}`
+        : "",
+    } as const;
+  }
 }

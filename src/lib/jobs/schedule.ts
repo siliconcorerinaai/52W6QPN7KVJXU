@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { appState, contacts } from "@/lib/db/schema";
 import { listMailboxes } from "@/lib/outreach/mailboxes";
 import { enqueue } from "./queue";
+import { recentConversations } from "@/lib/pipeline/replies";
 
 const SYNC_EVERY_MINUTES = 5;
 let lastCheck = 0;
@@ -40,7 +41,8 @@ export async function maybeScheduleInboxSync({ force = false } = {}) {
         .select({ n: sql<number>`count(*)::int` })
         .from(contacts)
         .where(inArray(contacts.status, ["sent", "approved"]));
-      if (!row?.n) return false;
+      // On continue de lire tant que des conversations sont en cours (réponses des 14 derniers jours).
+      if (!row?.n && !(await recentConversations())) return false;
       if (!(await claimInterval("inbox_sync", SYNC_EVERY_MINUTES))) return false;
     }
     await enqueue("mailbox.sync", {}, { priority: 3, maxAttempts: 1 });
