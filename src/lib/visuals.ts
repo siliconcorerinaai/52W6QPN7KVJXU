@@ -8,10 +8,11 @@ import { and, eq } from "drizzle-orm";
 import { intelligence } from "@/lib/ai";
 import { config } from "@/lib/config";
 import { getDb } from "@/lib/db";
-import { samples, type Campaign, type Company, type Sample } from "@/lib/db/schema";
+import { sampleVideos, samples, type Campaign, type Company, type Sample } from "@/lib/db/schema";
 import { logEvent } from "@/lib/events";
 import { errorMessage, sleep } from "@/lib/util";
 import { DEFAULT_VISUAL_BRIEF } from "@/lib/visual-prompt";
+import { startSampleVideo, videoEnabled } from "@/lib/videos";
 
 export { DEFAULT_VISUAL_BRIEF, visualPrompt } from "@/lib/visual-prompt";
 
@@ -50,6 +51,8 @@ async function generateInto(row: Sample, c: Campaign, co: Company): Promise<Samp
       .where(eq(samples.id, row.id))
       .returning();
     await logEvent(c.id, "success", "visual", `🎨 Visuel offert préparé pour ${co.name}`, { companyId: co.id, sampleId: row.id });
+    // Vidéo offerte : lancée tout de suite, elle sera prête quand le premier email sera rédigé.
+    if (ready && videoEnabled(c)) await startSampleVideo(ready, c, co);
     return ready ?? null;
   } catch (e) {
     await db.update(samples).set({ status: "failed", error: errorMessage(e).slice(0, 500), updatedAt: new Date() }).where(eq(samples.id, row.id));
@@ -95,10 +98,14 @@ export async function ensureSample(c: Campaign, co: Company, waitMs = 90_000): P
   }
 }
 
-/** Visuel d'une entreprise (sans les octets), pour l'affichage. */
-export async function sampleOf(companyId: string): Promise<{ id: string; status: string } | null> {
+/** Visuel d'une entreprise et état de sa vidéo (sans les octets), pour l'affichage. */
+export async function sampleOf(companyId: string): Promise<{ id: string; status: string; video: string | null } | null> {
   const db = await getDb();
-  const [row] = await db.select({ id: samples.id, status: samples.status }).from(samples).where(eq(samples.companyId, companyId));
+  const [row] = await db
+    .select({ id: samples.id, status: samples.status, video: sampleVideos.status })
+    .from(samples)
+    .leftJoin(sampleVideos, eq(sampleVideos.sampleId, samples.id))
+    .where(eq(samples.companyId, companyId));
   return row ?? null;
 }
 

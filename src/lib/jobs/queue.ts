@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb, rowsOf } from "@/lib/db";
-import { campaigns, jobs, type Job } from "@/lib/db/schema";
+import { campaigns, contacts, jobs, messages, type Job } from "@/lib/db/schema";
 
 export type JobType =
   | "campaign.discover"
@@ -12,6 +12,7 @@ export type JobType =
   | "message.send"
   | "mailbox.sync"
   | "reply.triage"
+  | "sample.video"
   | "campaign.supervise";
 
 export type EnqueueOptions = {
@@ -62,9 +63,44 @@ export async function claimJob(workerId: string): Promise<Job | null> {
   return job ?? null;
 }
 
+/**
+ * Clôt un job exécuté. Seul un job encore « en cours » passe à « terminé » : un job que son handler
+ * a reporté (rescheduleJob → « en file ») doit le rester, sinon l'envoi reporté est perdu.
+ */
 export async function completeJob(id: number) {
   const db = await getDb();
-  await db.update(jobs).set({ status: "done", lockedAt: null, updatedAt: new Date() }).where(eq(jobs.id, id));
+  await db
+    .update(jobs)
+    .set({ status: "done", lockedAt: null, updatedAt: new Date() })
+    .where(and(eq(jobs.id, id), eq(jobs.status, "running")));
+}
+
+/**
+ * Filet de sécurité : remet en file les envois approuvés qui n'ont plus de job
+ * (premier email approuvé, ou relance planifiée). Renvoie le nombre de jobs recréés.
+ */
+export async function requeueOrphanSends(): Promise<{ campaignId: string; n: number }[]> {
+  const db = await getDb();
+  const res = await db.execute(sql`
+    SELECT m.id, m.campaign_id AS "campaignId", m.scheduled_at AS "scheduledAt"
+    FROM ${messages} m
+    JOIN ${contacts} c ON c.id = m.contact_id
+    WHERE ((m.status = 'approved' AND m.step = 1 AND c.status = 'approved') OR m.status = 'scheduled')
+      AND c.status NOT IN ('replied', 'unsubscribed', 'bounced')
+      AND m.updated_at < now() - interval '5 minutes'
+      AND NOT EXISTS (
+        SELECT 1 FROM ${jobs} j
+        WHERE j.type = 'message.send' AND j.status IN ('queued', 'running') AND j.payload->>'messageId' = m.id
+      )
+    LIMIT 500`);
+  const rows = rowsOf<{ id: string; campaignId: string; scheduledAt: string | Date | null }>(res);
+  const perCampaign = new Map<string, number>();
+  for (const r of rows) {
+    const at = r.scheduledAt ? new Date(r.scheduledAt) : new Date();
+    await enqueue("message.send", { messageId: r.id }, { campaignId: r.campaignId, runAt: at > new Date() ? at : new Date(), priority: 5 });
+    perCampaign.set(r.campaignId, (perCampaign.get(r.campaignId) ?? 0) + 1);
+  }
+  return [...perCampaign].map(([campaignId, n]) => ({ campaignId, n }));
 }
 
 /** Échec : nouvelle tentative avec backoff exponentiel, ou échec définitif. Renvoie true si définitif. */

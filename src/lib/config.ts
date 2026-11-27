@@ -47,6 +47,10 @@ export const config = {
     get imageModel() {
       return env("OPENROUTER_IMAGE_MODEL", "google/gemini-2.5-flash-image");
     },
+    /** Modèle vidéo (vidéo offerte : le visuel animé). Doit accepter une première image (`first_frame`). */
+    get videoModel() {
+      return env("OPENROUTER_VIDEO_MODEL", "x-ai/grok-imagine-video-1.5-lite");
+    },
   },
   search: {
     get serper() {

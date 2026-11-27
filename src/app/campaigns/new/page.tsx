@@ -436,6 +436,14 @@ function NewCampaign() {
                     hint="L'agent crée un visuel promo à l'image de chaque entreprise qualifiée et le glisse dans le premier email. Donner avant de demander fait nettement plus répondre."
                   />
                   {settings.visualSample && (
+                    <Toggle
+                      checked={!!settings.visualVideo}
+                      onChange={(v) => setS("visualVideo", v)}
+                      label="Offrir aussi la version vidéo"
+                      hint="Le visuel est animé en une vidéo de 5 secondes, prête pour les Reels et Stories, sur la même page. Environ 0,16 $ par entreprise ; l'email part quelques minutes plus tard."
+                    />
+                  )}
+                  {settings.visualSample && (
                     <div>
                       <Label hint="(facultatif)">Ce que montre le visuel</Label>
                       <Input

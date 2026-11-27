@@ -6,7 +6,7 @@ import { ContactStatusBadge, EmailBadge, ScoreBadge, signalIcon } from "./badges
 import { Badge, Button, Input, Linkedin, Textarea } from "./ui";
 import type { Company, Contact, Message } from "@/lib/db/schema";
 
-type Detail = { contact: Contact; company: Company; messages: Message[]; sample?: { id: string; status: string } | null };
+type Detail = { contact: Contact; company: Company; messages: Message[]; sample?: { id: string; status: string; video?: string | null } | null };
 
 const EMAIL_SOURCE: Record<string, string> = {
   published: "publiée sur le site",
@@ -23,6 +23,7 @@ const MSG_STATUS: Record<string, string> = {
   draft: "Brouillon",
   approved: "Approuvé",
   scheduled: "Planifié",
+  held: "Mis de côté",
   sent: "Envoyé",
   failed: "Échec",
   cancelled: "Annulé",
@@ -59,13 +60,13 @@ function MessageEditor({ m, onSaved }: { m: Message; onSaved: () => void }) {
             <span className="text-slate-400">{new Date(m.scheduledAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</span>
           )}
           {m.sentAt && <span className="text-slate-400">{new Date(m.sentAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}</span>}
-          <Badge tone={m.status === "sent" ? "violet" : m.status === "failed" ? "red" : m.status === "draft" ? "amber" : "blue"}>{MSG_STATUS[m.status] ?? m.status}</Badge>
+          <Badge tone={m.status === "sent" ? "violet" : m.status === "failed" ? "red" : m.status === "draft" || m.status === "held" ? "amber" : "blue"}>{MSG_STATUS[m.status] ?? m.status}</Badge>
         </span>
       </div>
       <div className="space-y-2 p-3">
         <Input value={subject} onChange={(e) => setSubject(e.target.value)} disabled={locked} className="font-medium" />
         <Textarea value={body} onChange={(e) => setBody(e.target.value)} disabled={locked} rows={Math.min(14, Math.max(5, body.split("\n").length + 1))} className="leading-relaxed" />
-        {m.error && <p className="text-xs text-red-600">{m.error}</p>}
+        {m.error && <p className={m.status === "held" ? "text-xs text-amber-700" : "text-xs text-red-600"}>{m.error}</p>}
         {dirty && !locked && (
           <div className="flex justify-end">
             <Button size="sm" onClick={save} loading={saving} icon={<Check className="size-3.5" />}>
@@ -209,8 +210,26 @@ export function LeadDrawer({ contactId, onClose, onChanged }: { contactId: strin
                   )}
                 </div>
                 {data.sample.status === "ready" ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- image servie telle quelle
-                  <img src={`/v/${data.sample.id}/image`} alt={`Visuel pour ${co.name}`} className="w-full max-w-xs rounded-lg ring-1 ring-slate-200" />
+                  <div className="flex flex-wrap items-start gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- image servie telle quelle */}
+                    <img src={`/v/${data.sample.id}/image`} alt={`Visuel pour ${co.name}`} className="w-full max-w-[13rem] rounded-lg ring-1 ring-slate-200" />
+                    {data.sample.video === "ready" ? (
+                      <video
+                        src={`/v/${data.sample.id}/video`}
+                        poster={`/v/${data.sample.id}/image`}
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        controls
+                        className="w-full max-w-[13rem] rounded-lg bg-black ring-1 ring-slate-200"
+                      />
+                    ) : data.sample.video === "pending" ? (
+                      <p className="max-w-[13rem] text-sm text-slate-500">🎬 Vidéo animée en préparation (quelques minutes)…</p>
+                    ) : data.sample.video === "failed" ? (
+                      <p className="max-w-[13rem] text-sm text-slate-500">La vidéo n&apos;a pas pu être créée : l&apos;email cite le visuel seul.</p>
+                    ) : null}
+                  </div>
                 ) : (
                   <p className="text-sm text-slate-500">
                     {data.sample.status === "pending" ? "Visuel en préparation…" : "Le visuel n'a pas pu être créé : l'email part sans visuel."}
@@ -280,6 +299,25 @@ export function LeadDrawer({ contactId, onClose, onChanged }: { contactId: strin
                   {c.email && !["sent", "replied", "unsubscribed", "bounced"].includes(c.status) && (
                     <Button size="sm" variant="secondary" loading={busy === "rewrite"} onClick={() => act("rewrite", patch({ rewrite: true }))} icon={<RefreshCw className="size-3.5" />}>
                       {data.messages.length ? "Régénérer" : "Rédiger"}
+                    </Button>
+                  )}
+                  {data.messages.some((m) => m.step === 1 && m.status === "held") && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={busy === "release"}
+                      onClick={() =>
+                        act("release", () =>
+                          fetch(`/api/campaigns/${c.campaignId}/safety`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ release: [c.id] }),
+                          }),
+                        )
+                      }
+                      icon={<Send className="size-3.5" />}
+                    >
+                      Envoyer quand même
                     </Button>
                   )}
                   {c.status === "drafted" && (

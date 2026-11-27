@@ -132,7 +132,7 @@ export class DemoIntelligence implements Intelligence {
     return { people, signals: [pick(r, SIGNALS)].map((s) => ({ ...s, source: null, date: "2026-11" })), sources: [] };
   }
 
-  async writeSequence({ contact, company, offer, steps, followUpDays, sampleUrl }: Parameters<Intelligence["writeSequence"]>[0]) {
+  async writeSequence({ contact, company, offer, steps, followUpDays, sampleUrl, sampleVideo }: Parameters<Intelligence["writeSequence"]>[0]) {
     await sleep(1000);
     const first = splitName(contact.fullName).first;
     const signal = company.signals[0]?.text ?? `Développement de l'activité à ${company.location ?? "votre siège"}`;
@@ -142,7 +142,7 @@ export class DemoIntelligence implements Intelligence {
     const all = [
       {
         subject: `${company.name} et ${offer.product ? offer.product.split(" ").slice(0, 3).join(" ") : "votre croissance"}`,
-        body: `Bonjour ${first},\n\nUne actualité a retenu mon attention chez ${company.name} : « ${signal.replace(/\.$/, "")} ». Dans ce contexte, ${valueProp.replace(/\.$/, "")}.${sampleUrl ? `\n\nJ'ai préparé gratuitement un visuel pour ${company.name}, à votre image :\n${sampleUrl}` : ""}\n\nSeriez-vous ouvert(e) à ${offer.callToAction} la semaine prochaine pour voir si c'est pertinent pour vous ?${offer.bookingUrl ? `\nVous pouvez choisir un créneau ici :\n${offer.bookingUrl}` : ""}\n\nBien à vous,\n${sender}`,
+        body: `Bonjour ${first},\n\nUne actualité a retenu mon attention chez ${company.name} : « ${signal.replace(/\.$/, "")} ». Dans ce contexte, ${valueProp.replace(/\.$/, "")}.${sampleUrl ? `\n\nJ'ai préparé gratuitement un visuel pour ${company.name}, à votre image${sampleVideo ? ", et sa version animée en courte vidéo pour vos Reels" : ""} :\n${sampleUrl}` : ""}\n\nSeriez-vous ouvert(e) à ${offer.callToAction} la semaine prochaine pour voir si c'est pertinent pour vous ?${offer.bookingUrl ? `\nVous pouvez choisir un créneau ici :\n${offer.bookingUrl}` : ""}\n\nBien à vous,\n${sender}`,
         delayDays: 0,
       },
       {

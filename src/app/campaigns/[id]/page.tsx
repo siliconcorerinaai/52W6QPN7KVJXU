@@ -24,12 +24,15 @@ import { ActivityFeed, type FeedEvent } from "@/components/ActivityFeed";
 import { CampaignStatusBadge, ContactStatusBadge, EmailBadge, ScoreBadge, signalIcon } from "@/components/badges";
 import { CompaniesTable } from "@/components/CompaniesTable";
 import { LeadDrawer } from "@/components/LeadDrawer";
+import { SendSafety } from "@/components/SendSafety";
 import { useIsAdmin } from "@/components/RoleContext";
 import { Badge, Button, Card, EmptyState, Input, Linkedin } from "@/components/ui";
 import type { Campaign, Company, Contact } from "@/lib/db/schema";
 import type { CampaignStats } from "@/lib/pipeline/campaigns";
 
 type Lead = {
+  /** Premier email mis de côté par la règle d'envoi */
+  held: boolean;
   contact: Contact;
   company: Pick<Company, "id" | "name" | "domain" | "score" | "industry" | "location" | "country" | "signals">;
 };
@@ -43,6 +46,35 @@ const LEAD_FILTERS = [
   { id: "replied", label: "Réponses" },
 ] as const;
 type LeadFilter = (typeof LEAD_FILTERS)[number]["id"];
+
+/** Visuel et vidéo offerts : activables après coup (les prochains emails en profitent). */
+function OfferedSamples({ campaignId, settings, onChanged }: { campaignId: string; settings: Campaign["settings"]; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function set(patch: Partial<Campaign["settings"]>) {
+    setBusy(true);
+    await fetch(`/api/campaigns/${campaignId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: patch }) });
+    setBusy(false);
+    onChanged();
+  }
+  return (
+    <div className="mt-3 space-y-2">
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" className="accent-brand-600" disabled={busy} checked={!!settings.visualSample} onChange={(e) => set({ visualSample: e.target.checked })} />
+        Visuel offert à chaque prospect
+      </label>
+      <label className={clsx("flex items-center gap-2 text-sm", settings.visualSample ? "text-slate-700" : "text-slate-400")}>
+        <input
+          type="checkbox"
+          className="accent-brand-600"
+          disabled={busy || !settings.visualSample}
+          checked={!!settings.visualSample && !!settings.visualVideo}
+          onChange={(e) => set({ visualVideo: e.target.checked })}
+        />
+        + sa version vidéo (5 s, ~0,16 $ par entreprise)
+      </label>
+    </div>
+  );
+}
 
 /** Tarifs et conditions de l'offre (l'IA s'en sert pour répondre aux questions de prix). */
 function PricingEditor({ campaignId, initial }: { campaignId: string; initial: string }) {
@@ -139,7 +171,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   }, [id]);
 
   const live = campaign?.status === "running";
-  const hasPendingSends = leads.some((l) => l.contact.status === "approved");
+  const hasPendingSends = leads.some((l) => l.contact.status === "approved" && !l.held);
 
   useEffect(() => {
     refresh();
@@ -291,6 +323,8 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
         <FunnelStep label="Réponses" value={stats.replied} icon={<PenLine className="size-3.5" />} />
       </div>
 
+      {stats.withEmail > 0 && <SendSafety campaignId={campaign.id} version={events.length} onChanged={refresh} />}
+
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <Card className="min-w-0">
           {/* Onglets */}
@@ -390,7 +424,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map(({ contact: c, company: co }) => (
+                      {filtered.map(({ contact: c, company: co, held }) => (
                         <tr key={c.id} className="cursor-pointer border-b border-slate-50 hover:bg-slate-50" onClick={() => setOpenLead(c.id)}>
                           <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                             <input
@@ -437,7 +471,13 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                             )}
                           </td>
                           <td className="px-3 py-2.5">
-                            <ContactStatusBadge status={c.status} />
+                            {held ? (
+                              <Badge tone="amber" title="Adresse pas assez sûre pour la règle d'envoi de la campagne">
+                                Mis de côté
+                              </Badge>
+                            ) : (
+                              <ContactStatusBadge status={c.status} />
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -526,6 +566,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                     Séquence de {campaign.settings.sequenceSteps} emails · relance tous les {campaign.settings.followUpDays} j · recherche approfondie{" "}
                     {campaign.settings.deepResearch ? "activée" : "désactivée"}
                   </p>
+                  <OfferedSamples campaignId={campaign.id} settings={campaign.settings} onChanged={refresh} />
                 </div>
               </div>
             </div>
