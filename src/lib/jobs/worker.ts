@@ -44,6 +44,7 @@ const STEP_LABEL: Record<string, string> = {
   "message.send": "l'envoi d'un email",
   "campaign.supervise": "le suivi de la campagne",
   "mailbox.sync": "la lecture des boîtes de réception",
+  "reply.triage": "l'analyse d'une réponse",
 };
 
 /** Exécute un job et enregistre son issue. Ne lève jamais d'exception. */

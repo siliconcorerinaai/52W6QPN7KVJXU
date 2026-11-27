@@ -44,6 +44,40 @@ const LEAD_FILTERS = [
 ] as const;
 type LeadFilter = (typeof LEAD_FILTERS)[number]["id"];
 
+/** Tarifs et conditions de l'offre (l'IA s'en sert pour répondre aux questions de prix). */
+function PricingEditor({ campaignId, initial }: { campaignId: string; initial: string }) {
+  const [value, setValue] = useState(initial);
+  const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
+  async function save() {
+    if (value === initial) return;
+    setState("saving");
+    await fetch(`/api/campaigns/${campaignId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ offer: { pricing: value } }),
+    });
+    setState("saved");
+  }
+  return (
+    <div className="mt-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Tarifs et conditions {state === "saved" && <span className="normal-case text-emerald-600">· enregistré</span>}
+      </div>
+      <textarea
+        rows={2}
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          setState("idle");
+        }}
+        onBlur={save}
+        placeholder="Ex. : 5 visuels 149 $ · vidéo 15 s 249 $ · paiement à la commande"
+        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-800 focus:border-brand-500 focus:outline-none"
+      />
+    </div>
+  );
+}
+
 function FunnelStep({ label, value, total, icon, highlight }: { label: string; value: number; total?: number; icon: React.ReactNode; highlight?: boolean }) {
   return (
     <div className={clsx("rounded-xl border p-3", highlight ? "border-brand-200 bg-brand-50/60" : "border-slate-200 bg-white")}>
@@ -481,6 +515,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                       📅 {campaign.offer.bookingUrl}
                     </a>
                   )}
+                  <PricingEditor campaignId={campaign.id} initial={campaign.offer.pricing ?? ""} />
                 </div>
                 <div className="text-slate-600">
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Réglages</div>

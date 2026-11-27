@@ -13,6 +13,7 @@ import {
   ResolveSchema,
   SequenceSchema,
   TargetSiteSchema,
+  TriageSchema,
   type PlanResponse,
 } from "./schemas";
 import type { Intelligence, LinkResult } from "./intelligence";
@@ -498,5 +499,47 @@ de cette entreprise (de préférence son implantation en ${country}). Jamais d'a
     const prompt = visualPrompt(input.company, input.brief);
     const image = await generateImage({ operation: "visual", ctx, prompt });
     return { ...image, prompt };
+  }
+
+  async triageReply(input: Parameters<Intelligence["triageReply"]>[0], ctx: Parameters<Intelligence["triageReply"]>[1]) {
+    const { offer, company, contact, thread } = input;
+    const last = [...thread].reverse().find((t) => t.from === "prospect");
+    const language = offer.language && offer.language !== "auto" ? offer.language : company.language || "fr";
+    const history = thread
+      .map((t) => `--- ${t.from === "us" ? "NOUS" : "PROSPECT"} (${t.at.toISOString().slice(0, 16).replace("T", " ")}) — ${t.subject}\n${t.body}`)
+      .join("\n\n");
+    return structured({
+      operation: "reply.triage",
+      ctx,
+      effort: "medium",
+      schema: TriageSchema,
+      system: `Tu aides un commercial B2B à répondre à ses prospects pour conclure une vente.
+Classe la DERNIÈRE réponse du prospect, résume-la en une phrase (en français), puis rédige notre réponse.
+Règles pour la réponse :
+- Langue « ${language} » (vouvoiement en français), ton ${offer.tone || "professionnel et chaleureux"}, texte brut, 40 à 120 mots.
+- Réponds précisément à ce que le prospect dit ou demande. Une seule prochaine étape claire et facile.
+- Prix, délais, conditions : uniquement ceux indiqués dans l'offre. S'ils n'y sont pas, ne les invente pas :
+  propose un court échange ou demande ce dont il a besoin pour faire une proposition.
+- Lien de rendez-vous : seulement s'il est fourni, tel quel, sur sa propre ligne.
+- interested → confirme avec enthousiasme mesuré et propose la prochaine étape concrète.
+- not_now → remercie, propose de revenir vers lui à une date qu'il a indiquée (ou dans quelques mois), sans insister.
+- not_interested → remercie en une ou deux phrases, sans insister.
+- unsubscribe ou auto → needsReply=false et body vide.
+- Signe avec le nom de l'expéditeur et son entreprise. N'invente aucun fait.`,
+      prompt: `EXPÉDITEUR (nous)
+Entreprise : ${offer.senderCompany || "—"}
+Nom : ${offer.senderName || "—"}
+Offre : ${offer.product || "—"}
+Proposition de valeur : ${offer.valueProposition || "—"}
+Tarifs et conditions : ${offer.pricing?.trim() || "non indiqués"}
+Lien de rendez-vous : ${offer.bookingUrl || "aucun"}
+
+PROSPECT : ${contact.fullName} — ${contact.title ?? "?"} chez ${company.name} (${company.domain})
+
+FIL DE LA CONVERSATION
+${history}
+
+Dernière réponse du prospect à traiter : « ${last?.subject ?? ""} ».`,
+    });
   }
 }

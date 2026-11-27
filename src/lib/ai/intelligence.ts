@@ -1,5 +1,5 @@
 import type { AiContext } from "./usage";
-import type { PlanResponse, Analysis, PeopleResult, Sequence } from "./schemas";
+import type { PlanResponse, Analysis, PeopleResult, Sequence, Triage } from "./schemas";
 import type { CampaignOffer, CampaignPlan, CompanyCandidate, ImportedCompany, LinkKind } from "@/lib/types";
 import type { SiteDigest } from "@/lib/scrape/site";
 import type { LinkPage } from "@/lib/scrape/link";
@@ -37,6 +37,11 @@ export type WriteInput = {
 };
 
 export type VisualInput = { company: Company; offer: CampaignOffer; brief: string };
+
+/** Un message du fil avec un prospect (nos emails et ses réponses), du plus ancien au plus récent. */
+export type ThreadItem = { from: "us" | "prospect"; subject: string; body: string; at: Date };
+
+export type TriageInput = { offer: CampaignOffer; company: Company; contact: Contact; thread: ThreadItem[] };
 
 export type LinkInput = {
   kind: LinkKind;
@@ -77,6 +82,8 @@ export interface Intelligence {
   writeSequence(input: WriteInput, ctx: AiContext): Promise<Sequence>;
   /** Construit le plan (et l'offre ou la liste d'entreprises) à partir d'un lien et d'un pays. */
   fromLink(input: LinkInput, ctx: AiContext): Promise<LinkResult>;
+  /** Classe la dernière réponse d'un prospect et prépare notre réponse. */
+  triageReply(input: TriageInput, ctx: AiContext): Promise<Triage>;
   /** Génère le visuel promo offert à une entreprise (à son image). */
   generateVisual(input: VisualInput, ctx: AiContext): Promise<{ mime: string; data: Buffer; prompt: string }>;
   /** Retrouve le site officiel d'entreprises connues seulement par leur nom. */

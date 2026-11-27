@@ -11,6 +11,7 @@ export type JobType =
   | "contact.write"
   | "message.send"
   | "mailbox.sync"
+  | "reply.triage"
   | "campaign.supervise";
 
 export type EnqueueOptions = {

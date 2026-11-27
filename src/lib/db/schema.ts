@@ -114,6 +114,48 @@ export const companies = prospecta.table(
   ],
 );
 
+export type ReplyCategory = "interested" | "question" | "not_now" | "not_interested" | "unsubscribe" | "auto" | "other";
+export type ReplyStatus = "new" | "handled" | "answered";
+
+/**
+ * Conversation avec un prospect : ses réponses (direction « in ») et les nôtres envoyées depuis
+ * la boîte de réception (« out »). Les réponses entrantes sont classées par l'IA, qui prépare un brouillon.
+ */
+export const replies = prospecta.table(
+  "replies",
+  {
+    id: text().primaryKey(),
+    campaignId: text()
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    contactId: text()
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    mailboxId: text(),
+    direction: text().$type<"in" | "out">().notNull().default("in"),
+    messageId: text(),
+    inReplyTo: text(),
+    fromEmail: text().notNull(),
+    subject: text().notNull().default(""),
+    body: text().notNull().default(""),
+    receivedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    category: text().$type<ReplyCategory>(),
+    summary: text(),
+    draftSubject: text(),
+    draftBody: text(),
+    status: text().$type<ReplyStatus>().notNull().default("new"),
+    error: text(),
+    createdAt: now(),
+    updatedAt: now(),
+  },
+  (t) => [
+    uniqueIndex("replies_message").on(t.messageId),
+    index("replies_contact").on(t.contactId),
+    index("replies_campaign_status").on(t.campaignId, t.status),
+  ],
+);
+export type Reply = typeof replies.$inferSelect;
+
 /** Octets bruts (images) : Buffer côté Node, quel que soit le pilote (postgres-js ou PGlite). */
 const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
   dataType: () => "bytea",

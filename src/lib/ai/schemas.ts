@@ -143,3 +143,20 @@ export const ResolveSchema = z.object({
     }),
   ),
 });
+
+// ───────────────────────────── Réponses des prospects ─────────────────────────────
+
+export const REPLY_CATEGORIES = ["interested", "question", "not_now", "not_interested", "unsubscribe", "auto", "other"] as const;
+
+export const TriageSchema = z.object({
+  category: z
+    .enum(REPLY_CATEGORIES)
+    .describe(
+      "interested : veut avancer (oui, intéressé, envoyez, appelons-nous) ; question : demande une information (prix, délai, exemple…) ; not_now : pas maintenant, plus tard ; not_interested : non merci ; unsubscribe : demande de ne plus être contacté ; auto : réponse automatique (absence, accusé de réception) ; other : autre",
+    ),
+  summary: z.string().describe("Ce que dit le prospect, en une phrase, en français"),
+  needsReply: z.boolean().describe("true si une réponse de notre part est utile"),
+  subject: z.string().describe("Objet de notre réponse : « Re: » + objet du fil"),
+  body: z.string().describe("Notre réponse, texte brut, signée ; chaîne vide si needsReply=false"),
+});
+export type Triage = z.infer<typeof TriageSchema>;

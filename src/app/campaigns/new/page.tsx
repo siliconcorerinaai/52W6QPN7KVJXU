@@ -357,6 +357,15 @@ function NewCampaign() {
                   placeholder="Nous augmentons le taux de conversion de 20 à 40 % en 8 semaines, comme pour Maison Lumière."
                 />
               </div>
+              <div className="sm:col-span-2">
+                <Label hint="(l'IA s'en sert pour répondre aux questions de prix, sans rien inventer)">Tarifs et conditions</Label>
+                <Textarea
+                  rows={2}
+                  value={offer.pricing ?? ""}
+                  onChange={(e) => setO("pricing", e.target.value)}
+                  placeholder="Ex. : 5 visuels 149 $ · vidéo de 15 s 249 $ · abonnement 390 $/mois · paiement à la commande · livraison en 48 h"
+                />
+              </div>
               <div>
                 <Label>Appel à l&apos;action</Label>
                 <Input value={offer.callToAction} onChange={(e) => setO("callToAction", e.target.value)} />
