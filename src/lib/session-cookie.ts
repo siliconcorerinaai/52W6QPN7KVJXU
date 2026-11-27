@@ -11,7 +11,7 @@ export const PUBLIC_PATHS = [
   /^\/api\/unsubscribe(\/|$)/,
   /^\/api\/cron\//,
   // Visuels offerts aux prospects (lien dans les emails).
-  /^\/v\/[\w-]+(\/image)?$/,
+  /^\/v\/[\w-]+(\/(image|video))?$/,
 ];
 
 export const isPublicPath = (pathname: string) => PUBLIC_PATHS.some((re) => re.test(pathname));

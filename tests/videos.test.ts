@@ -115,6 +115,17 @@ describe("réglages du clip", () => {
   });
 });
 
+describe("accès public", () => {
+  it("la page, l'image et la vidéo d'un visuel s'ouvrent sans compte (lien dans l'email du prospect)", async () => {
+    const { isPublicPath } = await import("@/lib/session-cookie");
+    expect(isPublicPath("/v/smp-video-ok-0001")).toBe(true);
+    expect(isPublicPath("/v/smp-video-ok-0001/image")).toBe(true);
+    expect(isPublicPath("/v/smp-video-ok-0001/video")).toBe(true);
+    expect(isPublicPath("/v/smp-video-ok-0001/autre")).toBe(false);
+    expect(isPublicPath("/campaigns/x")).toBe(false);
+  });
+});
+
 describe("génération de la vidéo", () => {
   it("anime le visuel : job soumis, suivi, puis clip enregistré et servi", async () => {
     const { startSampleVideo, pollSampleVideo, videoOf } = await import("@/lib/videos");
