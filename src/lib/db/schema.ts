@@ -364,7 +364,8 @@ export type ContactStatus =
   | "replied"
   | "bounced"
   | "unsubscribed";
-export type MessageStatus = "draft" | "approved" | "scheduled" | "sent" | "failed" | "cancelled";
+/** held : premier email mis de côté par la règle d'envoi de la campagne (adresse pas assez sûre). */
+export type MessageStatus = "draft" | "approved" | "scheduled" | "held" | "sent" | "failed" | "cancelled";
 
 export type Campaign = typeof campaigns.$inferSelect;
 export type Company = typeof companies.$inferSelect;

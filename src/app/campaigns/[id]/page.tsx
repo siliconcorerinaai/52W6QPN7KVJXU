@@ -24,12 +24,15 @@ import { ActivityFeed, type FeedEvent } from "@/components/ActivityFeed";
 import { CampaignStatusBadge, ContactStatusBadge, EmailBadge, ScoreBadge, signalIcon } from "@/components/badges";
 import { CompaniesTable } from "@/components/CompaniesTable";
 import { LeadDrawer } from "@/components/LeadDrawer";
+import { SendSafety } from "@/components/SendSafety";
 import { useIsAdmin } from "@/components/RoleContext";
 import { Badge, Button, Card, EmptyState, Input, Linkedin } from "@/components/ui";
 import type { Campaign, Company, Contact } from "@/lib/db/schema";
 import type { CampaignStats } from "@/lib/pipeline/campaigns";
 
 type Lead = {
+  /** Premier email mis de côté par la règle d'envoi */
+  held: boolean;
   contact: Contact;
   company: Pick<Company, "id" | "name" | "domain" | "score" | "industry" | "location" | "country" | "signals">;
 };
@@ -139,7 +142,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   }, [id]);
 
   const live = campaign?.status === "running";
-  const hasPendingSends = leads.some((l) => l.contact.status === "approved");
+  const hasPendingSends = leads.some((l) => l.contact.status === "approved" && !l.held);
 
   useEffect(() => {
     refresh();
@@ -291,6 +294,8 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
         <FunnelStep label="Réponses" value={stats.replied} icon={<PenLine className="size-3.5" />} />
       </div>
 
+      {stats.withEmail > 0 && <SendSafety campaignId={campaign.id} version={events.length} onChanged={refresh} />}
+
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <Card className="min-w-0">
           {/* Onglets */}
@@ -390,7 +395,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map(({ contact: c, company: co }) => (
+                      {filtered.map(({ contact: c, company: co, held }) => (
                         <tr key={c.id} className="cursor-pointer border-b border-slate-50 hover:bg-slate-50" onClick={() => setOpenLead(c.id)}>
                           <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                             <input
@@ -437,7 +442,13 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                             )}
                           </td>
                           <td className="px-3 py-2.5">
-                            <ContactStatusBadge status={c.status} />
+                            {held ? (
+                              <Badge tone="amber" title="Adresse pas assez sûre pour la règle d'envoi de la campagne">
+                                Mis de côté
+                              </Badge>
+                            ) : (
+                              <ContactStatusBadge status={c.status} />
+                            )}
                           </td>
                         </tr>
                       ))}

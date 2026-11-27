@@ -33,6 +33,7 @@ import type { ImportedCompany, PersonHint, Signal } from "@/lib/types";
 import { pushWebhook } from "./export";
 import { ensureSample, sampleUrl, withSampleLink } from "@/lib/visuals";
 import { triageReply } from "./replies";
+import { checkBounceBreaker, gateFirstEmail } from "./safety";
 
 type Handler = (job: Job) => Promise<void>;
 
@@ -655,7 +656,7 @@ async function writeContact(job: Job) {
   );
   if (link && seq.steps[0]) seq.steps[0].body = withSampleLink(seq.steps[0].body, link);
 
-  await db.delete(messages).where(and(eq(messages.contactId, contactId), inArray(messages.status, ["draft", "approved", "cancelled"])));
+  await db.delete(messages).where(and(eq(messages.contactId, contactId), inArray(messages.status, ["draft", "approved", "held", "cancelled"])));
   for (const [i, s] of seq.steps.entries()) {
     await db
       .insert(messages)
@@ -745,8 +746,25 @@ async function sendMessage(job: Job) {
       : [undefined];
 
   const co = await loadCompany(ct.companyId);
-  const camp = await loadCampaign(msg.campaignId);
+  let camp = await loadCampaign(msg.campaignId);
   const timeZone = timeZoneFor(co?.country) ?? timeZoneFor(camp?.plan.geographies[0]);
+
+  // Envoi aux adresses sûres : le premier email ne part que vers une adresse que la règle de la campagne accepte
+  // (« Envoyer quand même » passe outre). Le coupe-circuit peut d'abord resserrer la règle ou mettre en pause.
+  if (msg.step === 1 && !job.payload.force && camp) {
+    if (await checkBounceBreaker(camp.id)) camp = (await loadCampaign(camp.id)) ?? camp;
+    const gate = await gateFirstEmail(camp, ct);
+    if (!gate.ok) {
+      if (gate.tier === "unusable") {
+        await db.update(contacts).set({ status: "no_email", emailStatus: "invalid", updatedAt: new Date() }).where(eq(contacts.id, ct.id));
+        await logEvent(msg.campaignId, "warn", "safety", `🛡️ ${ct.fullName} <${ct.email}> : adresse refusée par la vérification avant envoi, email annulé.`, { contactId: ct.id });
+        return cancel(gate.reason);
+      }
+      await db.update(messages).set({ status: "held", error: gate.reason, updatedAt: new Date() }).where(eq(messages.id, msg.id));
+      await logEvent(msg.campaignId, "info", "safety", `🛡️ ${ct.fullName} <${ct.email}> mis de côté : ${gate.reason.replace(/^Mis de côté : /, "")}.`, { contactId: ct.id });
+      return;
+    }
+  }
 
   let mailbox: SendingMailbox | null = null;
   if (!config.demoMode) {
@@ -801,6 +819,7 @@ async function sendMessage(job: Job) {
       await db.update(contacts).set({ status: "bounced", emailStatus: "invalid" }).where(eq(contacts.id, ct.id));
       await db.update(messages).set({ status: "failed", error: err, updatedAt: new Date() }).where(eq(messages.id, msg.id));
       await logEvent(msg.campaignId, "error", "send", `Rebond définitif pour ${ct.email} : ${err}`);
+      await checkBounceBreaker(msg.campaignId);
       return;
     }
     throw e;

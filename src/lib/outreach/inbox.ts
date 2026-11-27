@@ -14,6 +14,7 @@ import { campaignIdsOf, PLATFORM, type Owner } from "@/lib/ownership";
 import { logEvent } from "@/lib/events";
 import { errorMessage, hashString, newId } from "@/lib/util";
 import { listMailboxes, recordSync, type SendingMailbox } from "./mailboxes";
+import { checkBounceBreaker } from "@/lib/pipeline/safety";
 
 export type InboundMessage = {
   uid: number;
@@ -157,6 +158,7 @@ export async function applyInbound(items: InboundMessage[], ownAddresses: string
   const db = await getDb();
   let replies = 0;
   let bounces = 0;
+  const bouncedCampaigns = new Set<string>();
   const active = ["sent", "approved", "drafted"] as const;
   const inScope = owner ? sql`${contacts.campaignId} in ${campaignIdsOf(owner)}` : sql`true`;
 
@@ -193,9 +195,12 @@ export async function applyInbound(items: InboundMessage[], ownAddresses: string
           contactId: ct.id,
         });
         bounces++;
+        bouncedCampaigns.add(ct.campaignId);
       }
     }
   }
+  // Coupe-circuit : trop de rebonds → règle d'envoi resserrée (ou campagne en pause).
+  for (const id of bouncedCampaigns) await checkBounceBreaker(id);
   return { replies, bounces };
 }
 

@@ -19,8 +19,11 @@ const EMAIL: Record<string, { label: string; tone: Tone; title: string }> = {
   unknown: { label: "En cours", tone: "slate", title: "Recherche en cours" },
 };
 
+/** Adresse construite sur un format courant, pas encore confirmé pour ce domaine (voir lib/outreach/safety). */
+const GUESSED = { label: "Devinée", tone: "amber" as Tone, title: "Format d'adresse courant, non confirmé pour cette entreprise" };
+
 export function EmailBadge({ status, confidence }: { status: string; confidence?: number }) {
-  const s = EMAIL[status] ?? EMAIL.unknown;
+  const s = status === "risky" && confidence != null && confidence > 0 && confidence < 70 ? GUESSED : (EMAIL[status] ?? EMAIL.unknown);
   return (
     <Badge tone={s.tone} title={s.title}>
       {s.label}

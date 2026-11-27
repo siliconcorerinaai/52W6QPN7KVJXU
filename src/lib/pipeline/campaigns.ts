@@ -7,6 +7,7 @@ import { sampleOf } from "@/lib/visuals";
 import { config } from "@/lib/config";
 import { nextSendSlot } from "@/lib/outreach/mailer";
 import { newId, normalizeDomain } from "@/lib/util";
+import { setSendPolicy } from "./safety";
 import { campaignIdsOf, campaignScope, canAccess, NotFoundError, type Owner } from "@/lib/ownership";
 import {
   CampaignOfferSchema,
@@ -167,15 +168,18 @@ export async function updateCampaignConfig(id: string, patch: { name?: string; o
   const db = await getDb();
   const c = await getCampaign(id);
   if (!c) throw new Error("Campagne introuvable");
+  // La règle d'envoi a son propre chemin (journal, fenêtre de rebonds, emails mis de côté libérés).
+  const { sendPolicy, sendPolicySince, ...settingsPatch } = patch.settings ?? {};
   await db
     .update(campaigns)
     .set({
       name: patch.name?.trim() || c.name,
       offer: patch.offer ? CampaignOfferSchema.parse({ ...c.offer, ...patch.offer }) : c.offer,
-      settings: patch.settings ? CampaignSettingsSchema.parse({ ...c.settings, ...patch.settings }) : c.settings,
+      settings: patch.settings ? CampaignSettingsSchema.parse({ ...c.settings, ...settingsPatch }) : c.settings,
       updatedAt: new Date(),
     })
     .where(eq(campaigns.id, id));
+  if (sendPolicy) await setSendPolicy(id, sendPolicy);
 }
 
 export async function deleteCampaign(id: string) {
@@ -270,7 +274,18 @@ export async function listLeads(campaignId: string) {
     .from(contacts)
     .innerJoin(companies, eq(companies.id, contacts.companyId))
     .where(eq(contacts.campaignId, campaignId));
-  return rows.sort((a, b) => (b.company.score ?? 0) - (a.company.score ?? 0) || b.contact.relevance - a.contact.relevance);
+  // Premier email mis de côté par la règle d'envoi (adresse pas assez sûre)
+  const held = new Set(
+    (
+      await db
+        .select({ id: messages.contactId })
+        .from(messages)
+        .where(and(eq(messages.campaignId, campaignId), eq(messages.step, 1), eq(messages.status, "held")))
+    ).map((r) => r.id),
+  );
+  return rows
+    .map((r) => ({ ...r, held: held.has(r.contact.id) }))
+    .sort((a, b) => (b.company.score ?? 0) - (a.company.score ?? 0) || b.contact.relevance - a.contact.relevance);
 }
 
 export async function getContactDetail(contactId: string) {
@@ -333,12 +348,12 @@ export async function setContactStatus(contactId: string, status: "replied" | "u
     await db
       .update(messages)
       .set({ status: "cancelled", updatedAt: new Date() })
-      .where(and(eq(messages.contactId, contactId), inArray(messages.status, ["approved", "scheduled"])));
+      .where(and(eq(messages.contactId, contactId), inArray(messages.status, ["approved", "scheduled", "held"])));
   } else {
     await db
       .update(messages)
       .set({ status: "draft", updatedAt: new Date() })
-      .where(and(eq(messages.contactId, contactId), inArray(messages.status, ["approved", "scheduled", "cancelled"])));
+      .where(and(eq(messages.contactId, contactId), inArray(messages.status, ["approved", "scheduled", "held", "cancelled"])));
   }
   const label = { replied: "a répondu 🎉", unsubscribed: "s'est désinscrit", bounced: "a rebondi", drafted: "remis en brouillon" }[status];
   await logEvent(ct.campaignId, status === "replied" ? "success" : "info", "contact", `${ct.fullName} ${label}.`, { contactId });
