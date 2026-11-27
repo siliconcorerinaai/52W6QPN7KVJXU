@@ -98,7 +98,7 @@ describe("détection des réponses et rebonds", () => {
       },
       ["b@envoi.fr"],
     );
-    expect(bounce).toEqual({ kind: "bounce", bounced: ["paul.valery@acme.fr"] });
+    expect(bounce).toEqual({ kind: "bounce", bounced: ["paul.valery@acme.fr"], messageIds: [] });
     expect(classifyInbound({ uid: 5, from: "b@envoi.fr", subject: "Re: test" }, ["b@envoi.fr"]).kind).toBe("other");
   });
 
@@ -131,6 +131,44 @@ describe("détection des réponses et rebonds", () => {
     expect(followUps).toEqual({ k1: "cancelled", k2: "scheduled", k3: "cancelled", k4: "cancelled" });
     // Rejouer la même synchronisation ne change rien (idempotent)
     expect(await applyInbound([{ uid: 1, from: "jean.dupont@acme.fr", subject: "Re: échange" }], [])).toEqual({ replies: 0, bounces: 0 });
+  });
+
+  it("lit les rapports encodés (Zoho, base64), retrouve l'email par son Message-ID et ignore les simples retards", async () => {
+    const { getDb } = await import("@/lib/db");
+    const { contacts, messages } = await import("@/lib/db/schema");
+    const { applyInbound, classifyInbound } = await import("@/lib/outreach/inbox");
+    const db = await getDb();
+    const daemon = "mailer-daemon@mail.zoho.com";
+
+    // Retard de remise : le serveur réessaie, ce n'est pas un rebond.
+    const delayed = classifyInbound({
+      uid: 7,
+      from: daemon,
+      subject: "Delivery Status Notification (Delay)",
+      body: "Action: delayed\nStatus: 4.4.7\nWe will retry delivering your message.",
+    });
+    expect(delayed.kind).toBe("auto");
+
+    // Rapport dont le texte est en base64 : l'adresse n'apparaît qu'une fois décodée.
+    const text =
+      "A message that you sent could not be delivered. This is a permanent error.\r\n\r\n" +
+      "marie.curie@acme.fr, ERROR CODE :550 - 5.4.1 Recipient address rejected: Access denied.\r\n";
+    const b64 = Buffer.from(text).toString("base64").replace(/(.{76})/g, "$1\r\n");
+    const raw = `Content-Type: multipart/mixed; boundary="z"\r\n\r\n--z\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n${b64}\r\n--z--\r\n`;
+    expect(raw).not.toContain("marie.curie");
+    const c = classifyInbound({ uid: 8, from: daemon, subject: "Undelivered Mail Returned to Sender", body: raw }, ["b@envoi.fr"]);
+    expect(c.kind).toBe("bounce");
+    expect(c.bounced).toContain("marie.curie@acme.fr");
+
+    // Sans adresse lisible, l'email en échec est retrouvé par son Message-ID (ici coupé en quoted-printable).
+    await db.update(messages).set({ providerId: "<d02ea189-caea@envoi.fr>" }).where(eq(messages.id, "m-a-1"));
+    const qp = "Content-Transfer-Encoding: quoted-printable\r\n\r\nThis is a permanent error.\r\nMessage-ID:<d02ea189-ca=\r\nea@envoi.fr>\r\n";
+    const r = await applyInbound([{ uid: 9, from: daemon, subject: "Undelivered Mail Returned to Sender", body: qp }], ["b@envoi.fr"]);
+    expect(r).toEqual({ replies: 0, bounces: 1 });
+    const [k2] = await db.select().from(contacts).where(eq(contacts.id, "k2"));
+    expect(k2).toMatchObject({ status: "bounced", emailStatus: "invalid" });
+    const [followUp] = await db.select().from(messages).where(eq(messages.id, "f-k2"));
+    expect(followUp.status).toBe("cancelled");
   });
 });
 
