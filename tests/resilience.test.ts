@@ -13,7 +13,7 @@ const handlers = vi.hoisted(() => ({ runJob: vi.fn() }));
 vi.mock("@/lib/jobs/queue", () => queue);
 vi.mock("@/lib/db", () => db);
 vi.mock("@/lib/pipeline/handlers", () => handlers);
-vi.mock("@/lib/jobs/schedule", () => ({ maybeScheduleInboxSync: vi.fn(async () => false) }));
+vi.mock("@/lib/jobs/schedule", () => ({ maybeScheduleInboxSync: vi.fn(async () => false), maybeRequeueOrphanSends: vi.fn(async () => 0) }));
 vi.mock("@/lib/events", () => ({ logEvent: vi.fn(async () => {}) }));
 
 import { tick } from "@/lib/jobs/worker";

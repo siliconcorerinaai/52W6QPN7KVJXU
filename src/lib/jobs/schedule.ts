@@ -3,7 +3,8 @@ import { config } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { appState, contacts } from "@/lib/db/schema";
 import { listMailboxes } from "@/lib/outreach/mailboxes";
-import { enqueue } from "./queue";
+import { enqueue, requeueOrphanSends } from "./queue";
+import { logEvent } from "@/lib/events";
 import { recentConversations } from "@/lib/pipeline/replies";
 
 const SYNC_EVERY_MINUTES = 5;
@@ -50,5 +51,20 @@ export async function maybeScheduleInboxSync({ force = false } = {}) {
   } catch (e) {
     console.error("[schedule] lecture des boîtes non programmée", e);
     return false;
+  }
+}
+
+/** Toutes les 30 minutes : remet en file les envois approuvés restés sans job. */
+export async function maybeRequeueOrphanSends() {
+  try {
+    if (!(await claimInterval("orphan_sends", 30))) return 0;
+    const fixed = await requeueOrphanSends();
+    for (const { campaignId, n } of fixed) {
+      await logEvent(campaignId, "info", "send", `🔁 ${n} envoi(s) approuvé(s) remis en file d'attente.`);
+    }
+    return fixed.reduce((t, f) => t + f.n, 0);
+  } catch (e) {
+    console.error("[schedule] envois orphelins non vérifiés", e);
+    return 0;
   }
 }

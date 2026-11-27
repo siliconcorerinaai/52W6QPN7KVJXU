@@ -1,7 +1,7 @@
 import { hostname } from "node:os";
 import { claimJob, completeJob, failJob, recoverStaleJobs } from "./queue";
 import { runJob } from "@/lib/pipeline/handlers";
-import { maybeScheduleInboxSync } from "./schedule";
+import { maybeRequeueOrphanSends, maybeScheduleInboxSync } from "./schedule";
 import { logEvent } from "@/lib/events";
 import { errorMessage, sleep, TimeoutError, withTimeout } from "@/lib/util";
 import { config, isServerless } from "@/lib/config";
@@ -92,6 +92,7 @@ export async function tick({ maxJobs = 50, deadlineMs = 50_000, concurrency = co
   let processed = 0;
   await dbStep(recoverStaleJobs(STALE_MINUTES()), "la récupération des jobs orphelins");
   await dbStep(maybeScheduleInboxSync(), "la planification de la lecture des boîtes");
+  await dbStep(maybeRequeueOrphanSends(), "la vérification des envois en attente");
   const lanes = Array.from({ length: concurrency }, async () => {
     while (processed < maxJobs && Date.now() < deadline) {
       const job = await claimNext();
@@ -125,6 +126,7 @@ export function startWorker({ concurrency = config.worker.concurrency, idleMs = 
         const job = await claimNext();
         if (!job) {
           await dbStep(maybeScheduleInboxSync(), "la planification de la lecture des boîtes").catch(() => {});
+          await dbStep(maybeRequeueOrphanSends(), "la vérification des envois en attente").catch(() => {});
           await sleep(idleMs + Math.random() * 500);
           continue;
         }
