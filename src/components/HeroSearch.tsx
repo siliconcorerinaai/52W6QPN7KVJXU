@@ -10,6 +10,7 @@ export const EXAMPLES = [
   "Startups SaaS B2B en Europe ayant levé des fonds en 2026",
   "PME industrielles du Grand Ouest qui exportent et utilisent un ERP",
   "Écoles de commerce privées en Belgique et en Suisse",
+  "Fonds d'amorçage européens qui investissent dans le SaaS B2B (levée de fonds)",
 ];
 
 /** Grande barre « Décrivez votre client idéal » de la page d'accueil. */

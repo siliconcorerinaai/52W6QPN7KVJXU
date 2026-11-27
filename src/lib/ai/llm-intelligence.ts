@@ -49,7 +49,20 @@ de poste réalistes (dans la langue du marché). Écris le reste du plan en fran
 L'outil ne prospecte que des entreprises et organisations (B2B). Si la demande vise des particuliers
 (consommateurs, personnes en difficulté, etc.) ou ne permet pas d'identifier des entreprises cibles,
 mets feasible=false, explique pourquoi dans feasibilityIssue avec une suggestion de cible B2B, et laisse
-les listes vides. Sinon feasible=true et feasibilityIssue=null.`;
+les listes vides. Sinon feasible=true et feasibilityIssue=null.
+
+Levée de fonds : les investisseurs professionnels sont des organisations et donc des cibles valides (fonds de
+capital-risque, fonds d'amorçage, corporate venture, family offices, réseaux de business angels, accélérateurs,
+incubateurs qui investissent). Pour une levée : personas « Partner / Associé », « Principal », « Investment Manager »,
+« Directeur d'investissement » ; requêtes qui trouvent des fonds par stade (pre-seed, seed, série A…), secteur
+et zone (classements, annuaires de fonds, annonces de tours récents) ; critères de qualification : thèse
+d'investissement alignée, stade et ticket compatibles, investissements récents dans le secteur.
+En revanche, mets toujours feasible=false, en expliquant que ces offres relèvent de la réglementation financière
+(AMF, SEC, FCA…) et ne peuvent pas être démarchées par email :
+- la recherche d'investisseurs particuliers (épargnants, « investisseurs » sans précision professionnelle) ;
+- toute offre de placement : dépôt d'argent ou de crypto contre des rendements, gains promis ou garantis,
+  « retraits rapides », plans d'investissement, trading/forex, minage ou location de calcul rémunérée,
+  commissions de parrainage pour recruter des investisseurs, schémas multiniveaux.`;
 
 const offerText = (offer: CampaignOffer) =>
   [offer.senderCompany, offer.product, offer.valueProposition].filter(Boolean).join(" — ") || "non précisé";
@@ -204,7 +217,10 @@ Pour chaque entreprise : nom, domaine du site officiel (vérifié), raison de la
 Tu qualifies une entreprise par rapport au profil client idéal. Sois exigeant et factuel : une note ≥ 80 signifie
 « cible évidente », 60-79 « bonne cible probable », 40-59 « incertain », < 40 « hors cible ».
 Repère les signaux d'achat (recrutements, levées, ouvertures de sites, lancements, changements de direction…)
-et toutes les personnes nommées avec leur fonction (pages équipe, mentions légales : directeur de publication, etc.).`;
+et toutes les personnes nommées avec leur fonction (pages équipe, mentions légales : directeur de publication, etc.).
+Si la candidate est un investisseur (fonds, family office, réseau de business angels) : note l'adéquation de sa
+thèse, de ses stades et de ses tickets avec la levée décrite ; ses « signaux » sont ses investissements récents
+(entreprise, date, tour), ses nouveaux fonds levés et les associés qui couvrent le secteur.`;
     const base = `Profil client idéal (demande : "${prompt}")\n${planToText(plan)}\n\nEntreprise candidate : ${candidate.name} (${candidate.domain})\nRaison de la sélection : ${candidate.reason ?? "—"}`;
 
     if (digest && !deep) {
@@ -314,6 +330,10 @@ Règles :
 - Les relances apportent un angle nouveau (preuve, cas client, question) et ne disent pas « je me permets de relancer ».
 - Objets courts (2 à 6 mots), naturels, en minuscules sauf noms propres.
 - N'invente aucun chiffre, client ou résultat qui ne figure pas dans l'offre.
+- Si le destinataire est un investisseur (fonds, business angels) et que l'offre décrit une levée : l'email présente
+  l'entreprise et sa levée (ce qu'elle fait, traction réelle, stade, montant recherché s'il est indiqué), relie
+  l'opportunité à un investissement récent ou à la thèse du fonds, et propose d'envoyer le dossier ou d'en parler
+  15 minutes. Jamais de promesse de rendement ni de gain.
 - Signe avec le prénom et nom de l'expéditeur et son entreprise. N'ajoute pas de lien de désinscription (ajouté automatiquement).`,
       prompt: `EXPÉDITEUR
 Entreprise : ${offer.senderCompany || "—"}
