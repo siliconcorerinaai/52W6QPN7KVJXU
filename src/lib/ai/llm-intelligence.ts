@@ -312,7 +312,7 @@ Nombre de contacts souhaités : ${count}`;
   }
 
   async writeSequence(input: Parameters<Intelligence["writeSequence"]>[0], ctx: Parameters<Intelligence["writeSequence"]>[1]) {
-    const { offer, company, contact, steps, followUpDays, plan, sampleUrl } = input;
+    const { offer, company, contact, steps, followUpDays, plan, sampleUrl, sampleVideo } = input;
     const language = offer.language && offer.language !== "auto" ? offer.language : company.language || "fr";
     const signals = company.signals.map((s) => `- [${s.type}] ${s.text}${s.date ? ` (${s.date})` : ""}`).join("\n");
     return structured({
@@ -328,6 +328,7 @@ Règles :
 - 60 à 120 mots pour le premier email, 40 à 80 pour les relances. Texte brut, paragraphes courts, aucune pièce jointe, aucun emoji.
 - Aucun lien, sauf le lien de prise de rendez-vous s'il est fourni : place-le tel quel, sur sa propre ligne, dans l'appel à l'action du premier email et de la dernière relance (pas ailleurs).
 - Si un visuel offert est indiqué : c'est le cœur du premier email. Dis en une phrase que tu l'as préparé gratuitement pour eux, à leur image, et donne son lien tel quel sur sa propre ligne (premier email seulement ; les relances peuvent y faire allusion sans remettre le lien). L'appel à l'action devient : « voulez-vous la version finale, ou une vidéo du même style ? ».
+- Si une vidéo offerte est indiquée : la même page contient aussi une courte vidéo animée du visuel, prête pour leurs Reels et Stories. Dis-le dans la même phrase (un seul lien, celui du visuel). L'appel à l'action devient : « voulez-vous la version finale, et d'autres visuels et vidéos dans ce style ? ».
 - Les relances apportent un angle nouveau (preuve, cas client, question) et ne disent pas « je me permets de relancer ».
 - Objets courts (2 à 6 mots), naturels, en minuscules sauf noms propres.
 - N'invente aucun chiffre, client ou résultat qui ne figure pas dans l'offre.
@@ -344,6 +345,7 @@ Proposition de valeur : ${offer.valueProposition || "—"}
 Appel à l'action : ${offer.callToAction}
 Lien de prise de rendez-vous : ${offer.bookingUrl || "aucun"}
 Visuel offert, préparé pour ce prospect : ${sampleUrl || "aucun"}
+Vidéo offerte (sur la même page) : ${sampleUrl && sampleVideo ? "oui, courte vidéo animée du visuel" : "non"}
 Ton : ${offer.tone}
 
 DESTINATAIRE

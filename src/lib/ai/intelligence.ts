@@ -34,6 +34,8 @@ export type WriteInput = {
   followUpDays: number;
   /** Lien du visuel offert à l'entreprise, à citer dans le premier email. */
   sampleUrl?: string | null;
+  /** La page du visuel contient aussi une courte vidéo animée (prête). */
+  sampleVideo?: boolean;
 };
 
 export type VisualInput = { company: Company; offer: CampaignOffer; brief: string };

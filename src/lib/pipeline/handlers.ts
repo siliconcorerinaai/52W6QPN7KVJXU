@@ -32,6 +32,7 @@ import { errorMessage, hashString, isNonCompanyDomain, newId, normalizeDomain, s
 import type { ImportedCompany, PersonHint, Signal } from "@/lib/types";
 import { pushWebhook } from "./export";
 import { ensureSample, sampleUrl, withSampleLink } from "@/lib/visuals";
+import { pollSampleVideo, startSampleVideo, videoEnabled, videoGate, videoOf } from "@/lib/videos";
 import { triageReply } from "./replies";
 import { checkBounceBreaker, gateFirstEmail } from "./safety";
 
@@ -271,6 +272,7 @@ async function supervise(job: Job) {
     "company.research",
     "company.contacts",
     "company.visual",
+    "sample.video",
     "reply.triage",
     "contact.email",
     "contact.write",
@@ -642,6 +644,15 @@ async function writeContact(job: Job) {
   const sample = c.settings.visualSample ? await ensureSample(c, co) : null;
   const link = sample ? sampleUrl(sample.id) : null;
 
+  // Vidéo offerte : on attend qu'elle soit prête (ou abandonnée) pour ne citer que ce qui existe.
+  let video = false;
+  if (sample && videoEnabled(c)) {
+    const gate = videoGate(await videoOf(sample.id));
+    if (gate === "start" && (await startSampleVideo(sample, c, co)) !== "failed") return rescheduleJob(job, new Date(Date.now() + 60_000));
+    if (gate === "wait") return rescheduleJob(job, new Date(Date.now() + 45_000));
+    video = gate === "ready";
+  }
+
   const seq = await intelligence().writeSequence(
     {
       plan: c.plan,
@@ -651,6 +662,7 @@ async function writeContact(job: Job) {
       steps: c.settings.sequenceSteps,
       followUpDays: c.settings.followUpDays,
       sampleUrl: link,
+      sampleVideo: video,
     },
     ctxOf(c.id),
   );
@@ -871,6 +883,7 @@ const HANDLERS: Record<JobType, Handler> = {
   "message.send": sendMessage,
   "mailbox.sync": syncInboxes,
   "reply.triage": (job) => triageReply(job.payload.replyId as string),
+  "sample.video": pollSampleVideo,
 };
 
 export async function runJob(job: Job) {

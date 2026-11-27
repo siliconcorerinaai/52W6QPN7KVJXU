@@ -45,6 +45,7 @@ const STEP_LABEL: Record<string, string> = {
   "campaign.supervise": "le suivi de la campagne",
   "mailbox.sync": "la lecture des boîtes de réception",
   "reply.triage": "l'analyse d'une réponse",
+  "sample.video": "la création d'une vidéo offerte",
 };
 
 /** Exécute un job et enregistre son issue. Ne lève jamais d'exception. */

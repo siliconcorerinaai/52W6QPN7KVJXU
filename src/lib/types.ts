@@ -62,6 +62,8 @@ export const CampaignSettingsSchema = z.object({
   visualSample: z.boolean().optional(),
   /** Ce que doit montrer le visuel (ex. « affiche promo pour Instagram »). */
   visualBrief: z.string().max(500).optional(),
+  /** Offrir aussi le visuel animé en courte vidéo (Reels, Stories). Nécessite visualSample. */
+  visualVideo: z.boolean().optional(),
   /** Quelles adresses reçoivent le premier email (défaut : « balanced »). Voir lib/outreach/safety. */
   sendPolicy: z.enum(SEND_POLICIES).optional(),
   /** Début de la fenêtre de calcul du taux de rebond (date ISO du dernier changement de règle). */

@@ -6,7 +6,7 @@ import { ContactStatusBadge, EmailBadge, ScoreBadge, signalIcon } from "./badges
 import { Badge, Button, Input, Linkedin, Textarea } from "./ui";
 import type { Company, Contact, Message } from "@/lib/db/schema";
 
-type Detail = { contact: Contact; company: Company; messages: Message[]; sample?: { id: string; status: string } | null };
+type Detail = { contact: Contact; company: Company; messages: Message[]; sample?: { id: string; status: string; video?: string | null } | null };
 
 const EMAIL_SOURCE: Record<string, string> = {
   published: "publiée sur le site",
@@ -210,8 +210,26 @@ export function LeadDrawer({ contactId, onClose, onChanged }: { contactId: strin
                   )}
                 </div>
                 {data.sample.status === "ready" ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- image servie telle quelle
-                  <img src={`/v/${data.sample.id}/image`} alt={`Visuel pour ${co.name}`} className="w-full max-w-xs rounded-lg ring-1 ring-slate-200" />
+                  <div className="flex flex-wrap items-start gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- image servie telle quelle */}
+                    <img src={`/v/${data.sample.id}/image`} alt={`Visuel pour ${co.name}`} className="w-full max-w-[13rem] rounded-lg ring-1 ring-slate-200" />
+                    {data.sample.video === "ready" ? (
+                      <video
+                        src={`/v/${data.sample.id}/video`}
+                        poster={`/v/${data.sample.id}/image`}
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        controls
+                        className="w-full max-w-[13rem] rounded-lg bg-black ring-1 ring-slate-200"
+                      />
+                    ) : data.sample.video === "pending" ? (
+                      <p className="max-w-[13rem] text-sm text-slate-500">🎬 Vidéo animée en préparation (quelques minutes)…</p>
+                    ) : data.sample.video === "failed" ? (
+                      <p className="max-w-[13rem] text-sm text-slate-500">La vidéo n&apos;a pas pu être créée : l&apos;email cite le visuel seul.</p>
+                    ) : null}
+                  </div>
                 ) : (
                   <p className="text-sm text-slate-500">
                     {data.sample.status === "pending" ? "Visuel en préparation…" : "Le visuel n'a pas pu être créé : l'email part sans visuel."}

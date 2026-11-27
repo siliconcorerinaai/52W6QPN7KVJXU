@@ -192,6 +192,31 @@ export const samples = prospecta.table(
 );
 export type Sample = typeof samples.$inferSelect;
 
+/**
+ * Vidéo offerte : le visuel animé en un court clip (5 s) par un modèle vidéo, à partir du visuel comme première image.
+ * Table à part pour que les lectures des visuels ne chargent pas les octets des vidéos.
+ */
+export const sampleVideos = prospecta.table("sample_videos", {
+  sampleId: text()
+    .primaryKey()
+    .references(() => samples.id, { onDelete: "cascade" }),
+  campaignId: text()
+    .notNull()
+    .references(() => campaigns.id, { onDelete: "cascade" }),
+  status: text().$type<SampleStatus>().notNull().default("pending"),
+  /** Identifiant du job de génération chez OpenRouter */
+  jobId: text(),
+  model: text(),
+  mime: text(),
+  data: bytea(),
+  error: text(),
+  costUsd: doublePrecision().notNull().default(0),
+  startedAt: now(),
+  createdAt: now(),
+  updatedAt: now(),
+});
+export type SampleVideo = typeof sampleVideos.$inferSelect;
+
 export const contacts = prospecta.table(
   "contacts",
   {

@@ -47,6 +47,35 @@ const LEAD_FILTERS = [
 ] as const;
 type LeadFilter = (typeof LEAD_FILTERS)[number]["id"];
 
+/** Visuel et vidéo offerts : activables après coup (les prochains emails en profitent). */
+function OfferedSamples({ campaignId, settings, onChanged }: { campaignId: string; settings: Campaign["settings"]; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function set(patch: Partial<Campaign["settings"]>) {
+    setBusy(true);
+    await fetch(`/api/campaigns/${campaignId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: patch }) });
+    setBusy(false);
+    onChanged();
+  }
+  return (
+    <div className="mt-3 space-y-2">
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" className="accent-brand-600" disabled={busy} checked={!!settings.visualSample} onChange={(e) => set({ visualSample: e.target.checked })} />
+        Visuel offert à chaque prospect
+      </label>
+      <label className={clsx("flex items-center gap-2 text-sm", settings.visualSample ? "text-slate-700" : "text-slate-400")}>
+        <input
+          type="checkbox"
+          className="accent-brand-600"
+          disabled={busy || !settings.visualSample}
+          checked={!!settings.visualSample && !!settings.visualVideo}
+          onChange={(e) => set({ visualVideo: e.target.checked })}
+        />
+        + sa version vidéo (5 s, ~0,16 $ par entreprise)
+      </label>
+    </div>
+  );
+}
+
 /** Tarifs et conditions de l'offre (l'IA s'en sert pour répondre aux questions de prix). */
 function PricingEditor({ campaignId, initial }: { campaignId: string; initial: string }) {
   const [value, setValue] = useState(initial);
@@ -537,6 +566,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
                     Séquence de {campaign.settings.sequenceSteps} emails · relance tous les {campaign.settings.followUpDays} j · recherche approfondie{" "}
                     {campaign.settings.deepResearch ? "activée" : "désactivée"}
                   </p>
+                  <OfferedSamples campaignId={campaign.id} settings={campaign.settings} onChanged={refresh} />
                 </div>
               </div>
             </div>

@@ -12,6 +12,7 @@ export type JobType =
   | "message.send"
   | "mailbox.sync"
   | "reply.triage"
+  | "sample.video"
   | "campaign.supervise";
 
 export type EnqueueOptions = {

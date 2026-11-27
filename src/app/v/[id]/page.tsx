@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { campaigns, companies, samples } from "@/lib/db/schema";
+import { campaigns, companies, sampleVideos, samples } from "@/lib/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -11,15 +11,21 @@ const TEXT = {
     title: (c: string) => `Un visuel créé pour ${c}`,
     from: (s: string) => `Offert par ${s}, sans engagement.`,
     cta: "Il vous plaît ? Répondez simplement à notre email : nous vous préparons la version finale, ou une vidéo dans le même style.",
+    ctaVideo: "Ils vous plaisent ? Répondez simplement à notre email : nous préparons la version finale, et d'autres visuels et vidéos dans ce style.",
+    videoCaption: "La version animée, prête pour vos Reels et Stories :",
     book: "Prendre rendez-vous",
     download: "Télécharger le visuel",
+    downloadVideo: "Télécharger la vidéo",
   },
   en: {
     title: (c: string) => `A visual made for ${c}`,
     from: (s: string) => `A free sample from ${s}, no strings attached.`,
     cta: "Like it? Just reply to our email: we'll prepare the final version, or a video in the same style.",
+    ctaVideo: "Like them? Just reply to our email: we'll prepare the final version, plus more visuals and videos in this style.",
+    videoCaption: "The animated version, ready for your Reels and Stories:",
     book: "Book a call",
     download: "Download the visual",
+    downloadVideo: "Download the video",
   },
 };
 
@@ -27,10 +33,11 @@ async function load(id: string) {
   if (!/^[\w-]{10,40}$/.test(id)) return null;
   const db = await getDb();
   const [row] = await db
-    .select({ status: samples.status, language: samples.language, company: companies.name, offer: campaigns.offer })
+    .select({ status: samples.status, language: samples.language, company: companies.name, offer: campaigns.offer, video: sampleVideos.status })
     .from(samples)
     .innerJoin(companies, eq(companies.id, samples.companyId))
     .innerJoin(campaigns, eq(campaigns.id, samples.campaignId))
+    .leftJoin(sampleVideos, eq(sampleVideos.sampleId, samples.id))
     .where(eq(samples.id, id));
   return row && row.status === "ready" ? row : null;
 }
@@ -49,6 +56,7 @@ export default async function SamplePage({ params }: { params: Promise<{ id: str
   const t = TEXT[row.language?.startsWith("fr") ? "fr" : "en"];
   const sender = row.offer.senderCompany || row.offer.senderName;
   const image = `/v/${id}/image`;
+  const video = row.video === "ready" ? `/v/${id}/video` : null;
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10">
@@ -59,7 +67,15 @@ export default async function SamplePage({ params }: { params: Promise<{ id: str
           {/* eslint-disable-next-line @next/next/no-img-element -- image servie telle quelle, déjà optimisée */}
           <img src={image} alt={t.title(row.company)} className="block h-auto w-full" />
         </div>
-        <p className="mt-6 text-center text-slate-700">{t.cta}</p>
+        {video && (
+          <>
+            <p className="mt-6 text-center text-sm font-medium text-slate-600">{t.videoCaption}</p>
+            <div className="mx-auto mt-3 max-w-sm overflow-hidden rounded-2xl bg-black shadow-lg ring-1 ring-slate-200">
+              <video src={video} poster={image} autoPlay muted loop playsInline controls preload="metadata" className="block h-auto w-full" />
+            </div>
+          </>
+        )}
+        <p className="mt-6 text-center text-slate-700">{video ? t.ctaVideo : t.cta}</p>
         <div className="mt-5 flex flex-wrap justify-center gap-3">
           {row.offer.bookingUrl && /^https?:\/\//.test(row.offer.bookingUrl) && (
             <a
@@ -74,6 +90,11 @@ export default async function SamplePage({ params }: { params: Promise<{ id: str
           <a href={image} download className="rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-300 hover:bg-slate-100">
             {t.download}
           </a>
+          {video && (
+            <a href={video} download className="rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-300 hover:bg-slate-100">
+              {t.downloadVideo}
+            </a>
+          )}
         </div>
       </div>
     </main>
