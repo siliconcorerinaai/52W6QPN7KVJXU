@@ -160,3 +160,18 @@ export const TriageSchema = z.object({
   body: z.string().describe("Notre réponse, texte brut, signée ; chaîne vide si needsReply=false"),
 });
 export type Triage = z.infer<typeof TriageSchema>;
+
+// ───────────────────────────── Facebook ─────────────────────────────
+
+export const SocialMessageSchema = z.object({
+  message: z.string().describe("Le message Messenger, texte brut, prêt à coller"),
+});
+export type SocialMessage = z.infer<typeof SocialMessageSchema>;
+
+export const AdCopySchema = z.object({
+  primaryTexts: z.array(z.string()).describe("3 textes principaux d'annonce (125 à 300 caractères), angles différents"),
+  headlines: z.array(z.string()).describe("3 titres courts (40 caractères au plus)"),
+  descriptions: z.array(z.string()).describe("2 descriptions courtes (30 caractères au plus)"),
+  callToAction: z.enum(["LEARN_MORE", "SEND_MESSAGE", "CONTACT_US", "GET_QUOTE", "SIGN_UP", "BOOK_NOW"]).describe("Bouton d'action Meta le plus adapté"),
+});
+export type AdCopy = z.infer<typeof AdCopySchema>;

@@ -37,3 +37,55 @@ export const COUNTRIES = [
   "Émirats arabes unis",
   "Arabie saoudite",
 ] as const;
+
+const strip = (x: string) => x.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+
+/** Code pays ISO à deux lettres (format attendu par Meta pour les audiences), ou null si inconnu. */
+export function isoCountry(name: string | null | undefined): string | null {
+  const c = strip(name ?? "");
+  if (!c) return null;
+  if (/^[a-z]{2}$/.test(c)) return c.toUpperCase();
+  const table: [RegExp, string][] = [
+    [/etats-unis|united states|\busa?\b|amerique/, "US"],
+    [/canada|quebec/, "CA"],
+    [/royaume-uni|united kingdom|\buk\b|angleterre|england|ecosse|scotland|great britain/, "GB"],
+    [/irlande|ireland/, "IE"],
+    [/france/, "FR"],
+    [/belgique|belgium/, "BE"],
+    [/suisse|switzerland/, "CH"],
+    [/luxembourg/, "LU"],
+    [/allemagne|germany/, "DE"],
+    [/espagne|spain/, "ES"],
+    [/italie|italy/, "IT"],
+    [/portugal/, "PT"],
+    [/pays-bas|netherlands|hollande/, "NL"],
+    [/autriche|austria/, "AT"],
+    [/australie|australia/, "AU"],
+    [/nouvelle-zelande|new zealand/, "NZ"],
+    [/cote d.ivoire|ivory coast/, "CI"],
+    [/senegal/, "SN"],
+    [/republique democratique du congo|rdc|\bdrc\b/, "CD"],
+    [/congo/, "CG"],
+    [/cameroun|cameroon/, "CM"],
+    [/benin/, "BJ"],
+    [/togo/, "TG"],
+    [/burkina/, "BF"],
+    [/mali/, "ML"],
+    [/niger(?!ia)/, "NE"],
+    [/nigeria/, "NG"],
+    [/guinee|guinea/, "GN"],
+    [/gabon/, "GA"],
+    [/ghana/, "GH"],
+    [/maroc|morocco/, "MA"],
+    [/tunisie|tunisia/, "TN"],
+    [/algerie|algeria/, "DZ"],
+    [/madagascar/, "MG"],
+    [/maurice|mauritius/, "MU"],
+    [/kenya/, "KE"],
+    [/rwanda/, "RW"],
+    [/afrique du sud|south africa/, "ZA"],
+    [/emirats|emirates|dubai/, "AE"],
+    [/arabie|saudi/, "SA"],
+  ];
+  return table.find(([re]) => re.test(c))?.[1] ?? null;
+}

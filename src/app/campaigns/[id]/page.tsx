@@ -25,6 +25,7 @@ import { CampaignStatusBadge, ContactStatusBadge, EmailBadge, ScoreBadge, signal
 import { CompaniesTable } from "@/components/CompaniesTable";
 import { LeadDrawer } from "@/components/LeadDrawer";
 import { SendSafety } from "@/components/SendSafety";
+import { FacebookTab } from "@/components/FacebookTab";
 import { useIsAdmin } from "@/components/RoleContext";
 import { Badge, Button, Card, EmptyState, Input, Linkedin } from "@/components/ui";
 import type { Campaign, Company, Contact } from "@/lib/db/schema";
@@ -134,7 +135,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
   const [events, setEvents] = useState<FeedEvent[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
-  const [tab, setTab] = useState<"leads" | "companies" | "plan">("leads");
+  const [tab, setTab] = useState<"leads" | "companies" | "facebook" | "plan">("leads");
   const [filter, setFilter] = useState<LeadFilter>("all");
   const [companyFilter, setCompanyFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -333,6 +334,7 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
               [
                 ["leads", `Leads (${leads.length})`],
                 ["companies", `Entreprises (${companies.length})`],
+                ["facebook", "Facebook"],
                 ["plan", "Ciblage"],
               ] as const
             ).map(([k, label]) => (
@@ -508,6 +510,8 @@ export default function CampaignPage({ params }: { params: Promise<{ id: string 
               <CompaniesTable companies={companies} filter={companyFilter} />
             </div>
           )}
+
+          {tab === "facebook" && <FacebookTab campaignId={campaign.id} />}
 
           {tab === "plan" && (
             <div className="grid gap-5 p-5 text-sm md:grid-cols-2">

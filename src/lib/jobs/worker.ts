@@ -46,6 +46,8 @@ const STEP_LABEL: Record<string, string> = {
   "mailbox.sync": "la lecture des boîtes de réception",
   "reply.triage": "l'analyse d'une réponse",
   "sample.video": "la création d'une vidéo offerte",
+  "company.socials": "la recherche d'une page Facebook",
+  "social.write": "la rédaction d'un message Facebook",
 };
 
 /** Exécute un job et enregistre son issue. Ne lève jamais d'exception. */

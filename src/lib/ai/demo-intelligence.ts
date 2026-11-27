@@ -231,4 +231,33 @@ export class DemoIntelligence implements Intelligence {
         : "",
     } as const;
   }
+
+  async writeSocialMessage({ offer, company, contact, sampleUrl, sampleVideo, emailSent }: Parameters<Intelligence["writeSocialMessage"]>[0]) {
+    await sleep(300);
+    const first = contact ? splitName(contact.fullName).first : null;
+    const signal = company.signals[0]?.text ?? company.description ?? "";
+    const parts = [
+      `Bonjour ${first ?? `l'équipe ${company.name}`} !`,
+      signal ? `J'ai vu : « ${signal.replace(/\.$/, "")} », bravo.` : "",
+      sampleUrl ? `Je vous ai préparé gratuitement un visuel à votre image${sampleVideo ? ", avec sa version vidéo pour vos Reels" : ""}${emailSent ? " (je vous l'ai aussi envoyé par email)" : ""} :\n${sampleUrl}` : `${offer.valueProposition || "Je crée des visuels pour les commerces de votre quartier."}${emailSent ? " Je vous ai aussi écrit par email." : ""}`,
+      "Ça vous plairait d'en avoir d'autres comme ça ?",
+      `${(offer.senderName || "Alex").split(" ")[0]} — ${offer.senderCompany || "Votre entreprise"}`,
+    ];
+    return { message: parts.filter(Boolean).join("\n\n") };
+  }
+
+  async writeAdCopy({ offer }: Parameters<Intelligence["writeAdCopy"]>[0]) {
+    await sleep(300);
+    const product = offer.product || "Nos visuels";
+    return {
+      primaryTexts: [
+        `${product} : ${offer.valueProposition || "des visuels qui donnent envie, prêts à publier"}.`,
+        `Et si vos prochains posts attiraient vraiment des clients ? ${product}, livrés vite.`,
+        `On vous offre un premier visuel à votre image. Répondez à notre message pour le recevoir.`,
+      ],
+      headlines: ["Des visuels qui vendent", "Votre premier visuel offert", "Prêts à publier"],
+      descriptions: ["Livraison rapide", "Sans engagement"],
+      callToAction: "SEND_MESSAGE" as const,
+    };
+  }
 }
