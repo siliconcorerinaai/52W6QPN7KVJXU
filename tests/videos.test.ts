@@ -170,6 +170,7 @@ describe("génération de la vidéo", () => {
     const full = await GET(new Request("https://tryciblora.com/v/x/video"), params);
     expect(full.status).toBe(200);
     expect(full.headers.get("content-type")).toBe("video/mp4");
+    expect(full.headers.get("cache-control")).toMatch(/^private/);
     expect(Buffer.from(await full.arrayBuffer()).equals(MP4)).toBe(true);
     const part = await GET(new Request("https://tryciblora.com/v/x/video", { headers: { range: "bytes=0-9" } }), params);
     expect(part.status).toBe(206);

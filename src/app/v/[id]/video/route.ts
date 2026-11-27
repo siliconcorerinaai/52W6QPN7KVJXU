@@ -20,7 +20,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const base = {
     "Content-Type": row.mime,
     "Accept-Ranges": "bytes",
-    "Cache-Control": "public, max-age=86400, immutable",
+    // Cache du navigateur seulement : le cache CDN de Vercel répond « 200 » à une requête partielle,
+    // ce qui empêche Safari / iOS de lire la vidéo.
+    "Cache-Control": "private, max-age=86400",
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": "default-src 'none'; sandbox",
   };
